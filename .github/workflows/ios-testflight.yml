@@ -1,0 +1,91 @@
+name: iOS TestFlight
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-testflight-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-upload:
+    name: Build and upload to TestFlight
+    runs-on: macos-latest
+    timeout-minutes: 45
+    environment: testflight
+
+    defaults:
+      run:
+        working-directory: app
+
+    env:
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      IOS_CERTIFICATE_PRIVATE_KEY: ${{ secrets.IOS_CERTIFICATE_PRIVATE_KEY }}
+      BUNDLE_ID: br.com.newhope.hopecash
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate Apple credentials
+        run: |
+          test -n "$APP_STORE_CONNECT_ISSUER_ID"
+          test -n "$APP_STORE_CONNECT_KEY_IDENTIFIER"
+          test -n "$APP_STORE_CONNECT_PRIVATE_KEY"
+          test -n "$IOS_CERTIFICATE_PRIVATE_KEY"
+
+      - name: Install iOS dependencies
+        run: |
+          flutter pub get
+          pod install --project-directory=ios
+
+      - name: Install App Store Connect tools
+        run: |
+          python3 -m venv "$RUNNER_TEMP/codemagic-cli"
+          "$RUNNER_TEMP/codemagic-cli/bin/python" -m pip install \
+            --disable-pip-version-check codemagic-cli-tools
+          echo "$RUNNER_TEMP/codemagic-cli/bin" >> "$GITHUB_PATH"
+
+      - name: Fetch signing files
+        run: |
+          certificate_key="$RUNNER_TEMP/ios_certificate_key.pem"
+          printf '%s' "$IOS_CERTIFICATE_PRIVATE_KEY" > "$certificate_key"
+          chmod 600 "$certificate_key"
+
+          keychain initialize
+          app-store-connect fetch-signing-files "$BUNDLE_ID" \
+            --platform IOS \
+            --type IOS_APP_STORE \
+            --certificate-key=@file:"$certificate_key" \
+            --create
+          keychain add-certificates
+          xcode-project use-profiles
+
+      - name: Build signed IPA
+        run: |
+          flutter build ipa --release \
+            --build-number="${{ github.run_number }}" \
+            --export-options-plist="$HOME/export_options.plist" \
+            --dart-define=API_BASE_URL=https://hopecash-api.coagru.com.br
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HopeCash-ios-${{ github.run_number }}
+          path: app/build/ios/ipa/*.ipa
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to TestFlight
+        run: app-store-connect publish --path "$(find build/ios/ipa -name '*.ipa' -print -quit)"

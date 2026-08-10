@@ -1,0 +1,118 @@
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: hopecash-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-hopecash}
+      MYSQL_USER: ${MYSQL_USER:-hopecash}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hopecash}
+    ports:
+      - "${MYSQL_PORT:-3306}:3306"
+    volumes:
+      - hopecash_mysql:/var/lib/mysql
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h localhost -u$${MYSQL_USER} -p$${MYSQL_PASSWORD}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+  api:
+    build: ./backend
+    container_name: hopecash-api
+    depends_on:
+      mysql:
+        condition: service_healthy
+    environment:
+      NODE_ENV: production
+      PORT: 3000
+      DB_HOST: mysql
+      DB_PORT: 3306
+      DB_USER: ${MYSQL_USER:-hopecash}
+      DB_PASSWORD: ${MYSQL_PASSWORD:-hopecash}
+      DB_NAME: ${MYSQL_DATABASE:-hopecash}
+      JWT_SECRET: ${JWT_SECRET:-change-me-in-production-please-32ch}
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      # URL pública deste backend — usada nos metadados de descoberta OAuth do MCP.
+      API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+      # Retaguarda — superusuário provisionado na inicialização
+      SUPERUSER_EMAIL: ${SUPERUSER_EMAIL:-admin@hopecash.app}
+      SUPERUSER_NAME: ${SUPERUSER_NAME:-Super Admin}
+      SUPERUSER_PASSWORD: ${SUPERUSER_PASSWORD:-newhope}
+      # E-mail (SMTP) para reset de senha dos usuários do app
+      MAIL_ENABLED: ${MAIL_ENABLED:-false}
+      MAIL_SMTP: ${MAIL_SMTP:-smtp.gmail.com}
+      MAIL_PORT: ${MAIL_PORT:-587}
+      MAIL_USER: ${MAIL_USER:-}
+      MAIL_PASS: ${MAIL_PASS:-}
+      MAIL_FROM: ${MAIL_FROM:-}
+      MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      # Versao/build publicados — expostos em GET /api/v1/version.
+      BUILD_REF: ${BUILD_REF:-local}
+      BUILD_TIME: ${BUILD_TIME:-}
+      # LLM local (Ollama) — modelo único compartilhado por Hope, Coaguru e Open WebUI.
+      OLLAMA_URL: ${OLLAMA_URL:?Defina OLLAMA_URL no arquivo .env do servidor}
+      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-30000}
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.6:35b}
+      OLLAMA_MODEL_CHAT: ${OLLAMA_MODEL_CHAT:-qwen3.6:35b}
+      OLLAMA_MODEL_FAST: ${OLLAMA_MODEL_FAST:-qwen3.6:35b}
+      # Voz neural local no servidor privado de IA.
+      TTS_PROVIDER: ${TTS_PROVIDER:-kokoro}
+      TTS_URL: ${TTS_URL:?Defina TTS_URL no arquivo .env do servidor}
+      TTS_FALLBACK_PROVIDER: ${TTS_FALLBACK_PROVIDER:-coqui}
+      TTS_FALLBACK_URL: ${TTS_FALLBACK_URL:?Defina TTS_FALLBACK_URL no arquivo .env do servidor}
+      TTS_MODEL: ${TTS_MODEL:-kokoro}
+      TTS_VOICE: ${TTS_VOICE:-pf_dora(2)+af_bella(1)}
+      TTS_FORMAT: ${TTS_FORMAT:-mp3}
+      TTS_SPEED: ${TTS_SPEED:-0.96}
+      # Notificacoes push (Firebase Cloud Messaging) — sem credencial real
+      # como padrao: so habilita de fato se as variaveis forem informadas.
+      FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
+      FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-}
+      FIREBASE_CLIENT_EMAIL: ${FIREBASE_CLIENT_EMAIL:-}
+      FIREBASE_PRIVATE_KEY_BASE64: ${FIREBASE_PRIVATE_KEY_BASE64:-}
+      PUSH_SCHEDULER_ENABLED: ${PUSH_SCHEDULER_ENABLED:-false}
+      PUSH_SCHEDULER_INTERVAL_MS: ${PUSH_SCHEDULER_INTERVAL_MS:-60000}
+      PUSH_DUE_REMINDER_DAYS: ${PUSH_DUE_REMINDER_DAYS:-3}
+      PUSH_DEFAULT_TIMEZONE: ${PUSH_DEFAULT_TIMEZONE:-America/Sao_Paulo}
+      # Fallback por e-mail (quem não tem dispositivo push ativo) — reaproveita o MAIL_* acima.
+      PUSH_EMAIL_APP_URL: ${PUSH_EMAIL_APP_URL:-}
+    ports:
+      - "${API_PORT:-3000}:3000"
+
+  web:
+    build:
+      context: ./app
+      args:
+        API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+        BUILD_REF: ${BUILD_REF:-local}
+        BUILD_TIME: ${BUILD_TIME:-}
+        # Notificacoes push (Firebase Cloud Messaging) — Web/PWA
+        FIREBASE_PROJECT_ID: ${FIREBASE_PROJECT_ID:-hopecash}
+        FIREBASE_MESSAGING_SENDER_ID: ${FIREBASE_MESSAGING_SENDER_ID:-71481307234}
+        FIREBASE_WEB_APP_ID: ${FIREBASE_WEB_APP_ID:-1:71481307234:web:c284cb740f37342f9a613b}
+        FIREBASE_STORAGE_BUCKET: ${FIREBASE_STORAGE_BUCKET:-hopecash.firebasestorage.app}
+        FIREBASE_WEB_AUTH_DOMAIN: ${FIREBASE_WEB_AUTH_DOMAIN:-hopecash.firebaseapp.com}
+        FIREBASE_WEB_API_KEY: ${FIREBASE_WEB_API_KEY:-}
+        FIREBASE_VAPID_KEY: ${FIREBASE_VAPID_KEY:-}
+    container_name: hopecash-web
+    depends_on:
+      - api
+    ports:
+      - "${WEB_PORT:-8080}:80"
+
+  retaguarda:
+    build:
+      context: ./retaguarda
+      args:
+        API_BASE_URL: ${API_BASE_URL:-http://localhost:3000}
+        BUILD_REF: ${BUILD_REF:-local}
+        BUILD_TIME: ${BUILD_TIME:-}
+    container_name: hopecash-retaguarda
+    depends_on:
+      - api
+    ports:
+      - "${RETAGUARDA_PORT:-8085}:80"
+
+volumes:
+  hopecash_mysql:

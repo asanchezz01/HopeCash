@@ -1,0 +1,742 @@
+openapi: 3.0.3
+info:
+  title: HopeCash API
+  description: |
+    API REST da plataforma HopeCash (NewHope) — gestão financeira pessoal e familiar,
+    offline-first. Todas as entidades sincronizáveis carregam `id` (UUID), `version`,
+    `updated_at` e `deleted_at` (soft delete). Erros seguem o envelope
+    `{ "error": { "code", "message", "details?" } }`.
+  version: 1.0.0
+servers:
+  - url: /api/v1
+security:
+  - bearerAuth: []
+
+tags:
+  - name: Auth
+  - name: Users
+  - name: Families
+  - name: Accounts
+  - name: Cards
+  - name: Categories
+  - name: Transactions
+  - name: Budgets
+  - name: Cashflow
+  - name: Dashboard
+  - name: Goals
+  - name: Debts
+  - name: Investments
+  - name: Imports
+  - name: Rules
+  - name: Sync
+  - name: AI
+  - name: Push
+  - name: Retaguarda
+
+paths:
+  /health:
+    get:
+      security: []
+      summary: Healthcheck
+      responses: { '200': { description: OK } }
+
+  /auth/register:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Cadastro de usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+      responses:
+        '201': { description: 'Usuário criado; retorna tokens', content: { application/json: { schema: { $ref: '#/components/schemas/AuthTokens' } } } }
+
+  /auth/login:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Login
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string }
+                password: { type: string }
+                device_name: { type: string }
+      responses:
+        '200': { description: Tokens emitidos, content: { application/json: { schema: { $ref: '#/components/schemas/AuthTokens' } } } }
+        '401': { description: Credenciais inválidas }
+
+  /auth/refresh:
+    post:
+      tags: [Auth]
+      security: []
+      summary: Rotaciona o refresh token
+      requestBody:
+        content:
+          application/json:
+            schema: { type: object, required: [refresh_token], properties: { refresh_token: { type: string } } }
+      responses:
+        '200': { description: Novo par de tokens }
+
+  /auth/logout:
+    post: { tags: [Auth], security: [], summary: Revoga a sessão, responses: { '200': { description: OK } } }
+  /auth/forgot-password:
+    post: { tags: [Auth], security: [], summary: Solicita recuperação de senha, responses: { '200': { description: OK } } }
+  /auth/reset-password:
+    post: { tags: [Auth], security: [], summary: Redefine a senha com token, responses: { '200': { description: OK } } }
+
+  /users/me:
+    get: { tags: [Users], summary: Perfil do usuário, responses: { '200': { description: OK } } }
+    put: { tags: [Users], summary: Atualiza perfil, responses: { '200': { description: OK } } }
+    delete: { tags: [Users], summary: Exclusão definitiva da conta (LGPD), responses: { '200': { description: OK } } }
+  /users/me/export:
+    get: { tags: [Users], summary: Exportação completa dos dados (LGPD), responses: { '200': { description: JSON com todos os dados } } }
+  /users/me/sessions:
+    get: { tags: [Users], summary: Sessões ativas, responses: { '200': { description: OK } } }
+  /users/me/sessions/{id}:
+    delete:
+      tags: [Users]
+      summary: Logout remoto de um dispositivo
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK } }
+
+  /families:
+    get: { tags: [Families], summary: Minhas famílias, responses: { '200': { description: OK } } }
+    post: { tags: [Families], summary: Cria família, responses: { '201': { description: Criada } } }
+  /families/{id}/members:
+    get:
+      tags: [Families]
+      summary: Membros da família
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK } }
+  /families/{id}/invites:
+    post:
+      tags: [Families]
+      summary: Convida membro por e-mail
+      parameters: [{ name: id, in: path, required: true, schema: { type: string } }]
+      responses: { '201': { description: Convite criado } }
+  /families/invites/accept:
+    post: { tags: [Families], summary: Aceita convite por token, responses: { '200': { description: OK } } }
+
+  /accounts:
+    get: { tags: [Accounts], summary: Lista contas, parameters: [{ $ref: '#/components/parameters/updatedSince' }], responses: { '200': { description: OK } } }
+    post: { tags: [Accounts], summary: Cria conta, responses: { '201': { description: Criada } } }
+  /accounts/{id}:
+    get: { tags: [Accounts], summary: Detalhe, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    put: { tags: [Accounts], summary: 'Atualiza (controle otimista: envie version)', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { description: Conflito de versão } } }
+    delete: { tags: [Accounts], summary: Soft delete, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /accounts/balances:
+    get: { tags: [Accounts], summary: Contas com saldo atual calculado, responses: { '200': { description: OK } } }
+  /accounts/transfer:
+    post:
+      tags: [Accounts]
+      summary: Transferência entre contas (par débito/crédito atômico)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [from_account_id, to_account_id, amount]
+              properties:
+                from_account_id: { type: string, format: uuid }
+                to_account_id: { type: string, format: uuid }
+                amount: { type: number }
+                date: { type: string, format: date }
+                description: { type: string }
+      responses: { '201': { description: Transferência criada } }
+  /accounts/{id}/statement:
+    get:
+      tags: [Accounts]
+      summary: Extrato com saldo corrente
+      parameters:
+        - { $ref: '#/components/parameters/id' }
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+      responses: { '200': { description: OK } }
+
+  /cards:
+    get: { tags: [Cards], summary: Lista cartões, responses: { '200': { description: OK } } }
+    post: { tags: [Cards], summary: Cria cartão, responses: { '201': { description: Criado } } }
+  /cards/{cardId}/invoices:
+    get: { tags: [Cards], summary: Faturas do cartão, parameters: [{ name: cardId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+    post: { tags: [Cards], summary: Cria fatura, parameters: [{ name: cardId, in: path, required: true, schema: { type: string } }], responses: { '201': { description: Criada } } }
+  /cards/{cardId}/invoices/{invoiceId}/pay:
+    post:
+      tags: [Cards]
+      summary: Paga a fatura (gera despesa na conta indicada)
+      parameters:
+        - { name: cardId, in: path, required: true, schema: { type: string } }
+        - { name: invoiceId, in: path, required: true, schema: { type: string } }
+      responses: { '200': { description: OK } }
+
+  /categories:
+    get: { tags: [Categories], summary: Categorias (inclui padrão do sistema), responses: { '200': { description: OK } } }
+    post: { tags: [Categories], summary: Cria categoria personalizada, responses: { '201': { description: Criada } } }
+  /categories/{categoryId}/subcategories:
+    get: { tags: [Categories], summary: Subcategorias, parameters: [{ name: categoryId, in: path, required: true, schema: { type: string } }], responses: { '200': { description: OK } } }
+
+  /transactions:
+    get:
+      tags: [Transactions]
+      summary: Lista lançamentos
+      parameters:
+        - { $ref: '#/components/parameters/updatedSince' }
+        - { name: type, in: query, schema: { type: string, enum: [income, expense, transfer] } }
+        - { name: status, in: query, schema: { type: string, enum: [planned, paid, overdue, canceled] } }
+        - { name: account_id, in: query, schema: { type: string } }
+        - { name: category_id, in: query, schema: { type: string } }
+      responses: { '200': { description: OK } }
+    post:
+      tags: [Transactions]
+      summary: Cria lançamento (receita/despesa)
+      requestBody:
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Transaction' }
+      responses: { '201': { description: Criado } }
+  /transactions/{id}:
+    get: { tags: [Transactions], summary: Detalhe, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    put: { tags: [Transactions], summary: Atualiza, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { description: Conflito de versão } } }
+    delete: { tags: [Transactions], summary: Soft delete, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /transactions/installments:
+    post:
+      tags: [Transactions]
+      summary: Compra parcelada (cria N parcelas mensais)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              allOf:
+                - $ref: '#/components/schemas/Transaction'
+                - type: object
+                  required: [total_amount, installments, first_due_date]
+                  properties:
+                    total_amount: { type: number }
+                    installments: { type: integer, minimum: 2 }
+                    first_due_date: { type: string, format: date }
+      responses: { '201': { description: Parcelas criadas } }
+
+  /ai/parse-transaction:
+    post: { tags: [AI], summary: Interpreta frase falada e devolve lançamento estruturado (LLM local via Ollama), responses: { '200': { description: OK }, '503': { description: LLM indisponível } } }
+  /ai/health:
+    get: { tags: [AI], summary: Estado do servidor de IA (Ollama) — versão, modelos configurados e instalados, responses: { '200': { description: 'OK (ok=false quando indisponível, nunca 5xx)' } } }
+  /ai/tools:
+    get: { tags: [AI], summary: 'Catálogo de ferramentas financeiras da IA (nome, descrição, JSON Schema) — debug/dev, indisponível em produção', responses: { '200': { description: OK } } }
+  /ai/tools/{name}:
+    post:
+      tags: [AI]
+      summary: Executa uma ferramenta pelo nome — write tools apenas criam propostas; debug/dev, indisponível em produção
+      parameters: [{ name: name, in: path, required: true, schema: { type: string } }]
+      responses: { '200': { description: OK }, '400': { description: Parâmetros inválidos }, '404': { description: Tool desconhecida } }
+  /ai/chat:
+    post:
+      tags: [AI]
+      summary: 'Chat com a assistente Hope — consultas e propostas de escrita; resposta em SSE (eventos: meta, tool, action, delta, done, error)'
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [message]
+              properties:
+                conversation_id: { type: string, format: uuid, nullable: true }
+                message: { type: string, maxLength: 2000 }
+      responses: { '200': { description: Stream text/event-stream }, '404': { description: Conversa não encontrada } }
+  /ai/conversations:
+    get: { tags: [AI], summary: Conversas do usuário com a Hope (mais recentes primeiro), responses: { '200': { description: OK } } }
+  /ai/conversations/{id}:
+    get: { tags: [AI], summary: Conversa com todas as mensagens em ordem cronológica, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '404': { description: Não encontrada } } }
+    delete: { tags: [AI], summary: Exclui a conversa e as mensagens definitivamente (LGPD), parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: Excluída } } }
+  /ai/actions/{id}/confirm:
+    post:
+      tags: [AI]
+      summary: Confirma e executa uma ação proposta pela Hope; propostas expiram em 15 minutos
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Ação confirmada e resultado executado }, '400': { description: Já decidida ou expirada }, '404': { description: Não encontrada } }
+  /ai/actions/{id}/reject:
+    post:
+      tags: [AI]
+      summary: Recusa uma ação proposta sem alterar dados financeiros
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Ação recusada }, '400': { description: Já decidida }, '404': { description: Não encontrada } }
+
+  /budgets:
+    get: { tags: [Budgets], summary: Orçamentos, responses: { '200': { description: OK } } }
+    post: { tags: [Budgets], summary: Cria orçamento mensal, responses: { '201': { description: Criado } } }
+  /budgets/{id}/summary:
+    get: { tags: [Budgets], summary: Previsto × realizado por categoria/subcategoria (despesas e receitas), parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /budgets/copy:
+    post: { tags: [Budgets], summary: Copia orçamento de outro mês, responses: { '201': { description: Copiado } } }
+  /budgets/suggestion:
+    get: { tags: [Budgets], summary: Sugestão baseada na média dos meses anteriores, responses: { '200': { description: OK } } }
+
+  /cashflow:
+    get:
+      tags: [Cashflow]
+      summary: Fluxo de caixa realizado + projetado
+      parameters:
+        - { name: from, in: query, schema: { type: string, format: date } }
+        - { name: to, in: query, schema: { type: string, format: date } }
+        - { name: granularity, in: query, schema: { type: string, enum: [day, week, month, year], default: month } }
+      responses: { '200': { description: 'Períodos com saldos, vencidos e períodos de risco' } }
+
+  /dashboard:
+    get: { tags: [Dashboard], summary: Indicadores do painel principal, responses: { '200': { description: OK } } }
+
+  /goals:
+    get: { tags: [Goals], summary: Metas, responses: { '200': { description: OK } } }
+    post: { tags: [Goals], summary: Cria meta, responses: { '201': { description: Criada } } }
+  /debts:
+    get: { tags: [Debts], summary: Dívidas e financiamentos, responses: { '200': { description: OK } } }
+    post: { tags: [Debts], summary: Cria dívida, responses: { '201': { description: Criada } } }
+  /investments:
+    get: { tags: [Investments], summary: Investimentos, responses: { '200': { description: OK } } }
+    post: { tags: [Investments], summary: Cria investimento, responses: { '201': { description: Criado } } }
+  /investments/{id}/movements:
+    post: { tags: [Investments], summary: Aporte/resgate/rendimento, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '201': { description: Criado } } }
+
+  /imports:
+    post:
+      tags: [Imports]
+      summary: Upload de extrato ou análise de conciliação de fatura
+      requestBody:
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, source]
+              properties:
+                file: { type: string, format: binary }
+                source: { type: string, enum: [csv, ofx, pdf] }
+                import_kind: { type: string, enum: [bank_statement, credit_card_invoice], default: bank_statement }
+                account_id: { type: string, format: uuid }
+                card_id: { type: string, format: uuid }
+                invoice_due_date: { type: string, format: date }
+                reference_month: { type: string, format: date }
+                column_mapping: { type: string, description: 'JSON {date, description, amount, has_header}' }
+      responses: { '200': { description: Upload idempotente; lote existente }, '201': { description: Lote criado e analisado } }
+  /imports/{id}:
+    get: { tags: [Imports], summary: Lote, itens e resumo projetado, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/items:
+    get: { tags: [Imports], summary: Itens do lote para conferência, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/confirm:
+    post: { tags: [Imports], summary: Confirma extrato ou aplica conciliação atômica com diferença zero, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { description: Lançamento alterado após a análise } } }
+  /imports/{id}/analyze:
+    post: { tags: [Imports], summary: Reexecuta análise preservando associações manuais, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/decisions/bulk:
+    post: { tags: [Imports], summary: Aplica decisão a vários itens, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/official-total:
+    put: { tags: [Imports], summary: Confirma total oficial em centavos, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/difference-item:
+    post: { tags: [Imports], summary: Lança a diferença remanescente da fatura como um novo item pendente de categorização/decisão, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '409': { description: Já existe um ajuste pendente } } }
+  /imports/{id}/cancel:
+    post: { tags: [Imports], summary: Cancela sem apagar decisões, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /imports/{id}/resume:
+    post: { tags: [Imports], summary: Retoma conciliação cancelada, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+
+  /rules/categorization:
+    get: { tags: [Rules], summary: Regras de categorização automática, responses: { '200': { description: OK } } }
+    post: { tags: [Rules], summary: Cria regra, responses: { '201': { description: Criada } } }
+  /rules/notification:
+    get: { tags: [Rules], summary: Regras de leitura de notificações bancárias, responses: { '200': { description: OK } } }
+    post: { tags: [Rules], summary: Cria regra, responses: { '201': { description: Criada } } }
+
+  /sync/push:
+    post:
+      tags: [Sync]
+      summary: Envia lote de operações offline (idempotente)
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [device_id, operations]
+              properties:
+                device_id: { type: string }
+                operations:
+                  type: array
+                  items:
+                    type: object
+                    required: [operation_id, entity, entity_id, op]
+                    properties:
+                      operation_id: { type: string }
+                      entity: { type: string }
+                      entity_id: { type: string, format: uuid }
+                      op: { type: string, enum: [create, update, delete] }
+                      payload: { type: object }
+                      base_version: { type: integer }
+                      client_updated_at: { type: string }
+      responses:
+        '200': { description: 'Resultado por operação: applied | conflict_resolved | duplicate | rejected' }
+  /sync/pull:
+    get:
+      tags: [Sync]
+      summary: Alterações incrementais desde o cursor
+      parameters:
+        - { name: since, in: query, schema: { type: string }, description: 'Cursor do pull anterior; 0 para bootstrap' }
+        - { name: entities, in: query, schema: { type: string }, description: 'Lista separada por vírgula (opcional)' }
+      responses:
+        '200': { description: Registros alterados por entidade + novo cursor }
+
+  # ── Notificações push (Firebase Cloud Messaging) ────────────────────────
+  /push/devices:
+    post:
+      tags: [Push]
+      summary: Registra (ou atualiza, idempotente pelo token) o dispositivo push do usuário
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [token, platform]
+              properties:
+                token: { type: string, description: 'Token FCM do dispositivo' }
+                platform: { type: string, enum: [web, pwa, android, ios] }
+                install_id: { type: string }
+                app_version: { type: string }
+                locale: { type: string }
+                timezone: { type: string }
+      responses: { '201': { description: Dispositivo registrado/atualizado } }
+    get: { tags: [Push], summary: Lista os dispositivos do usuário (token nunca é exposto), responses: { '200': { description: OK } } }
+  /push/devices/deactivate:
+    post:
+      tags: [Push]
+      summary: Desativa o token no logout (idempotente)
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { type: object, required: [token], properties: { token: { type: string } } }
+      responses: { '200': { description: OK } }
+  /push/preferences:
+    get: { tags: [Push], summary: Preferências de notificação do usuário (criadas com padrão no primeiro acesso), responses: { '200': { description: OK } } }
+    put:
+      tags: [Push]
+      summary: Atualiza preferências de notificação
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                push_enabled: { type: boolean }
+                due_reminders_enabled: { type: boolean }
+                financial_insights_enabled: { type: boolean }
+                tips_enabled: { type: boolean }
+                email_notifications_enabled: { type: boolean, description: 'Autoriza o canal de e-mail junto com o push para as categorias habilitadas (default true)' }
+                reminder_advance_days: { type: integer, minimum: 0, maximum: 30 }
+                preferred_hour: { type: integer, minimum: 0, maximum: 23, nullable: true }
+                timezone: { type: string }
+      responses: { '200': { description: OK } }
+  /notifications:
+    get: { tags: [Push], summary: Caixa de entrada de notificações do usuário, parameters: [{ $ref: '#/components/parameters/updatedSince' }], responses: { '200': { description: OK } } }
+  /notifications/{id}/read:
+    patch: { tags: [Push], summary: Marca a notificação como lida, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+
+  # ── Retaguarda (backoffice) ──────────────────────────────────────────────
+  # Autenticação própria (typ rtg_*), independente do app. Superusuário
+  # provisionado na inicialização a partir do .env.
+  /retaguarda/auth/login:
+    post:
+      tags: [Retaguarda]
+      security: []
+      summary: Login de usuário da retaguarda
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email, password]
+              properties:
+                email: { type: string, format: email }
+                password: { type: string }
+      responses:
+        '200': { description: 'Tokens da retaguarda', content: { application/json: { schema: { $ref: '#/components/schemas/AuthTokens' } } } }
+  /retaguarda/auth/refresh:
+    post:
+      tags: [Retaguarda]
+      security: []
+      summary: Renova o access token da retaguarda
+      responses: { '200': { description: Novos tokens } }
+  /retaguarda/auth/logout:
+    post:
+      tags: [Retaguarda]
+      security: []
+      summary: Encerra a sessão da retaguarda
+      responses: { '200': { description: OK } }
+  /retaguarda/stats:
+    get:
+      tags: [Retaguarda]
+      summary: Indicadores do painel (usuários do app e da equipe)
+      responses: { '200': { description: Totais consolidados } }
+  /retaguarda/users:
+    get:
+      tags: [Retaguarda]
+      summary: Lista usuários da retaguarda
+      responses: { '200': { description: Lista } }
+    post:
+      tags: [Retaguarda]
+      summary: Cria usuário da retaguarda
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, password]
+              properties:
+                name: { type: string }
+                email: { type: string, format: email }
+                password: { type: string, minLength: 8 }
+                role: { type: string, enum: [admin, superuser], default: admin }
+      responses: { '201': { description: Criado } }
+  /retaguarda/users/me:
+    get:
+      tags: [Retaguarda]
+      summary: Perfil do usuário logado
+      responses: { '200': { description: Perfil } }
+  /retaguarda/users/me/password:
+    put:
+      tags: [Retaguarda]
+      summary: Troca a própria senha
+      responses: { '200': { description: OK } }
+  /retaguarda/users/{id}:
+    put:
+      tags: [Retaguarda]
+      summary: Atualiza nome/papel/status/senha de um usuário da retaguarda
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Atualizado } }
+    delete:
+      tags: [Retaguarda]
+      summary: Exclui (soft delete) um usuário da retaguarda
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: OK } }
+  /retaguarda/app-users:
+    get:
+      tags: [Retaguarda]
+      summary: Lista/pesquisa usuários do app
+      parameters:
+        - { name: search, in: query, schema: { type: string } }
+        - { name: status, in: query, schema: { type: string, enum: [active, blocked, pending_deletion] } }
+        - { name: limit, in: query, schema: { type: integer, default: 50 } }
+        - { name: offset, in: query, schema: { type: integer, default: 0 } }
+      responses: { '200': { description: 'Página de usuários + meta.total' } }
+  /retaguarda/app-users/{id}:
+    get:
+      tags: [Retaguarda]
+      summary: Detalhe de um usuário do app
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses: { '200': { description: Usuário + sessões ativas } }
+  /retaguarda/app-users/{id}/status:
+    patch:
+      tags: [Retaguarda]
+      summary: Bloqueia/desbloqueia um usuário do app
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [status]
+              properties:
+                status: { type: string, enum: [active, blocked] }
+      responses: { '200': { description: Usuário atualizado } }
+  /retaguarda/app-users/{id}/reset-password:
+    post:
+      tags: [Retaguarda]
+      summary: Gera senha provisória e envia por e-mail ao usuário do app
+      description: |
+        Redefine a senha do usuário do app para uma senha provisória, encerra as
+        sessões ativas e envia o código por e-mail. Quando o envio está desabilitado
+        (`MAIL_ENABLED=false`) o código é devolvido no campo `data.code`.
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      responses:
+        '200':
+          description: Resultado do reset
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  data:
+                    type: object
+                    properties:
+                      message: { type: string }
+                      email: { type: string }
+                      email_sent: { type: boolean }
+                      code: { type: string, description: 'Presente apenas com MAIL_ENABLED=false' }
+
+  # Campanhas de notificação push — criação/edição livres para admin e
+  # superuser; envio, agendamento, cancelamento e reprocessamento restritos a superuser.
+  /retaguarda/notifications:
+    get:
+      tags: [Retaguarda]
+      summary: Lista campanhas de notificação push
+      parameters:
+        - { name: status, in: query, schema: { type: string, enum: [draft, scheduled, processing, sent, partially_sent, canceled, failed] } }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 20 } }
+      responses: { '200': { description: 'Página de campanhas + meta.total' } }
+    post:
+      tags: [Retaguarda]
+      summary: Cria um rascunho de campanha
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [title, body]
+              properties:
+                title: { type: string, maxLength: 150 }
+                body: { type: string, maxLength: 500 }
+                category: { type: string, enum: [general, tips, insights, maintenance, promo], default: general }
+                audience: { type: string, enum: [all, selected], default: all }
+                target_user_ids: { type: array, items: { type: string, format: uuid } }
+                deep_link: { type: string, description: 'Rota interna permitida do app (allow-list)' }
+      responses: { '201': { description: Rascunho criado }, '400': { description: 'Deep link não permitido ou público selecionado sem usuários' } }
+  /retaguarda/notifications/{id}:
+    get: { tags: [Retaguarda], summary: Detalhe da campanha, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+    put: { tags: [Retaguarda], summary: Edita a campanha (somente em rascunho ou agendada), parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '400': { description: Já processada } } }
+    delete: { tags: [Retaguarda], summary: 'Exclui a campanha e seu histórico de entregas (superuser)', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '400': { description: Em processamento }, '403': { description: 'Ação exclusiva do superusuário' } } }
+  /retaguarda/notifications/{id}/preview:
+    get: { tags: [Retaguarda], summary: 'Prévia multicanal (destinatários, dispositivos por plataforma e quantidade de e-mails previstos), sem enviar nada', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /retaguarda/notifications/{id}/recipients:
+    get:
+      tags: [Retaguarda]
+      summary: 'Lista paginada dos nomes dos destinatários, pelo histórico de entregas ou pela elegibilidade atual antes do envio'
+      parameters:
+        - { $ref: '#/components/parameters/id' }
+        - { name: page, in: query, schema: { type: integer, default: 1 } }
+        - { name: limit, in: query, schema: { type: integer, default: 100, maximum: 100 } }
+      responses: { '200': { description: 'Nomes e identificadores dos destinatários + origem da lista em meta.source' } }
+  /retaguarda/notifications/{id}/stats:
+    get: { tags: [Retaguarda], summary: Estatísticas e falhas de entrega da campanha, parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK } } }
+  /retaguarda/notifications/{id}/send:
+    post: { tags: [Retaguarda], summary: 'Envia imediatamente (superuser)', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { description: 'Ação exclusiva do superusuário' } } }
+  /retaguarda/notifications/{id}/schedule:
+    post:
+      tags: [Retaguarda]
+      summary: 'Agenda o envio (superuser) — data/horário local + fuso; gravado em UTC'
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [date, time, timezone]
+              properties:
+                date: { type: string, format: date }
+                time: { type: string, example: '14:30' }
+                timezone: { type: string, example: America/Sao_Paulo }
+      responses: { '200': { description: OK }, '400': { description: 'Data/horário no passado' }, '403': { description: 'Ação exclusiva do superusuário' } }
+  /retaguarda/notifications/{id}/cancel:
+    post: { tags: [Retaguarda], summary: 'Cancela o agendamento/rascunho (superuser)', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { description: 'Ação exclusiva do superusuário' } } }
+  /retaguarda/notifications/{id}/reprocess:
+    post: { tags: [Retaguarda], summary: 'Reprocessa falhas temporárias com dispositivo ainda ativo (superuser)', parameters: [{ $ref: '#/components/parameters/id' }], responses: { '200': { description: OK }, '403': { description: 'Ação exclusiva do superusuário' } } }
+  /retaguarda/notifications/{id}/resend:
+    post:
+      tags: [Retaguarda]
+      summary: 'Duplica a campanha e reenvia por push, e-mail ou ambos (superuser)'
+      parameters: [{ $ref: '#/components/parameters/id' }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                channel: { type: string, enum: [push, email, both], default: both }
+      responses: { '201': { description: 'Nova campanha criada e enviada' }, '403': { description: 'Ação exclusiva do superusuário' } }
+
+  # Mensagens push automáticas do sistema (avisos de vencimento, insights
+  # financeiros, dicas da Hope) — diferente de push_campaigns (composição
+  # manual). Leitura liberada a admin/superuser; edição restrita a superuser.
+  /retaguarda/automation-rules:
+    get:
+      tags: [Retaguarda]
+      summary: Lista as regras de mensagens automáticas (uma por tipo)
+      responses: { '200': { description: 'due_reminder, financial_insight e tip' } }
+  /retaguarda/automation-rules/{messageType}:
+    put:
+      tags: [Retaguarda]
+      summary: 'Liga/desliga e ajusta frequência/conteúdo de um tipo (superuser)'
+      parameters:
+        - { name: messageType, in: path, required: true, schema: { type: string, enum: [due_reminder, financial_insight, tip] } }
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                enabled: { type: boolean }
+                frequency_days:
+                  type: integer
+                  minimum: 0
+                  maximum: 365
+                  description: 'due_reminder: antecedência em dias; financial_insight/tip: intervalo mínimo entre envios ao mesmo usuário'
+                title: { type: string, maxLength: 150, nullable: true, description: 'Ignorado para due_reminder (conteúdo varia por kind)' }
+                body: { type: string, maxLength: 500, nullable: true }
+                config: { type: object, description: 'Ex.: financial_insight → {threshold_percent}' }
+      responses: { '200': { description: OK }, '403': { description: 'Ação exclusiva do superusuário' }, '404': { description: 'Tipo de mensagem desconhecido' } }
+
+components:
+  securitySchemes:
+    bearerAuth: { type: http, scheme: bearer, bearerFormat: JWT }
+  parameters:
+    id:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    updatedSince:
+      name: updated_since
+      in: query
+      schema: { type: string }
+      description: Retorna apenas registros alterados após esse carimbo
+  schemas:
+    AuthTokens:
+      type: object
+      properties:
+        data:
+          type: object
+          properties:
+            access_token: { type: string }
+            refresh_token: { type: string }
+            user: { type: object }
+    Transaction:
+      type: object
+      required: [type, description, competence_date]
+      properties:
+        id: { type: string, format: uuid, description: 'UUID gerado no cliente (offline-first)' }
+        type: { type: string, enum: [income, expense, transfer] }
+        description: { type: string }
+        amount_planned: { type: number }
+        amount: { type: number }
+        competence_date: { type: string, format: date }
+        due_date: { type: string, format: date }
+        payment_date: { type: string, format: date }
+        status: { type: string, enum: [planned, paid, overdue, canceled] }
+        account_id: { type: string, format: uuid }
+        card_id: { type: string, format: uuid }
+        category_id: { type: string, format: uuid }
+        subcategory_id: { type: string, format: uuid }
+        tags: { type: array, items: { type: string } }
+        notes: { type: string }

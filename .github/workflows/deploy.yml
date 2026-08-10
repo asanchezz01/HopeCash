@@ -1,0 +1,42 @@
+name: Deploy produção
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+    inputs:
+      no_cache:
+        description: "Rebuild sem cache do Docker"
+        type: boolean
+        default: false
+      pull:
+        description: "Atualizar imagens base (--pull)"
+        type: boolean
+        default: false
+      prune:
+        description: "docker image prune -f após o deploy"
+        type: boolean
+        default: false
+
+# Deploys nunca rodam em paralelo; um push novo espera o anterior terminar.
+concurrency:
+  group: production-deploy
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: self-hosted
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Publicar containers
+        env:
+          ENV_FILE: /opt/hopecash/.env
+          NO_CACHE: ${{ inputs.no_cache && '1' || '0' }}
+          PULL: ${{ inputs.pull && '1' || '0' }}
+          PRUNE: ${{ inputs.prune && '1' || '0' }}
+        run: bash scripts/deploy.sh

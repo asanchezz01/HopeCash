@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "71481307234",
+    "project_id": "hopecash",
+    "storage_bucket": "hopecash.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:71481307234:android:66495a59ef0417739a613b",
+        "android_client_info": {
+          "package_name": "br.com.newhope.hopecash"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyB1MgjpJ2yyHen2nOylsW04Icn5-4nAEw4"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

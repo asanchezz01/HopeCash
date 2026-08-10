@@ -1,0 +1,35 @@
+Todo o aplicativo deve seguir o estilo Material 3.
+
+Design inspirado em:
+
+Google Wallet
+
+YNAB
+
+Copilot Money
+
+Monarch Money
+
+Apple Wallet
+
+Google Finance
+
+Interface minimalista.
+
+Pouca informação por tela.
+
+Espaços amplos.
+
+Animações suaves.
+
+Cards elevados.
+
+Bordas arredondadas.
+
+Cores suaves.
+
+Ícones outline.
+
+Sempre priorizar rapidez.
+
+O usuário deve conseguir registrar uma despesa em menos de 5 segundos.

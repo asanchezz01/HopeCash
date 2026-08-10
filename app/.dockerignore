@@ -1,0 +1,7 @@
+.dart_tool/
+build/
+.idea/
+android/
+ios/
+test/
+*.iml

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Cor de destaque das notificações push (mesma cor de marca do PWA/theme-color). -->
+    <color name="hopecash_notification_color">#16C784</color>
+</resources>

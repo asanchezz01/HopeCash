@@ -8,6 +8,7 @@ import 'package:just_audio/just_audio.dart';
 import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
+import '../../core/audio/hope_audio_source.dart';
 import '../../core/providers.dart';
 import '../../core/utils/money.dart';
 import '../../data/remote/ai_api.dart';
@@ -67,6 +68,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   bool _listening = false;
   bool _voiceSubmissionPending = false;
   _Msg? _playingMessage;
+  HopeAudioPlaybackSource? _playbackSource;
 
   @override
   void dispose() {
@@ -74,6 +76,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     _scroll.dispose();
     _speech.cancel();
     _audioPlayer.dispose();
+    final playbackSource = _playbackSource;
+    if (playbackSource != null) unawaited(playbackSource.dispose());
     super.dispose();
   }
 
@@ -182,12 +186,17 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         if (msg.audio!.isEmpty) throw StateError('Áudio vazio');
       }
       await _audioPlayer.stop();
+      await _releasePlaybackSource();
       if (_playingMessage != null && mounted) {
         setState(() => _playingMessage!.audioPlaying = false);
       }
       _playingMessage = msg;
-      final uri = Uri.dataFromBytes(msg.audio!, mimeType: msg.audioContentType);
-      await _audioPlayer.setAudioSource(AudioSource.uri(uri));
+      final playbackSource = await createHopeAudioPlaybackSource(
+        msg.audio!,
+        msg.audioContentType,
+      );
+      _playbackSource = playbackSource;
+      await _audioPlayer.setAudioSource(playbackSource.audioSource);
       if (!mounted) return;
       setState(() {
         msg.audioLoading = false;
@@ -197,7 +206,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       if (mounted && identical(_playingMessage, msg)) {
         setState(() => msg.audioPlaying = false);
       }
-    } catch (_) {
+    } catch (error, stackTrace) {
+      debugPrint('Falha ao reproduzir a voz da Hope: $error\n$stackTrace');
+      await _audioPlayer.stop();
+      await _releasePlaybackSource();
       if (!mounted) return;
       setState(() {
         msg.audioLoading = false;
@@ -211,11 +223,18 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   Future<void> _stopAudio() async {
     await _audioPlayer.stop();
+    await _releasePlaybackSource();
     if (!mounted) return;
     setState(() {
       if (_playingMessage != null) _playingMessage!.audioPlaying = false;
       _playingMessage = null;
     });
+  }
+
+  Future<void> _releasePlaybackSource() async {
+    final playbackSource = _playbackSource;
+    _playbackSource = null;
+    await playbackSource?.dispose();
   }
 
   void _openTransaction(String transactionId) {

@@ -8,7 +8,7 @@ import '../../core/config/app_config.dart';
 /// Cliente HTTP com JWT automático e renovação transparente do access token.
 /// Tokens ficam no armazenamento seguro da plataforma (Keychain/Keystore).
 class ApiClient {
-  ApiClient({FlutterSecureStorage? storage, Dio? dio})
+  ApiClient({FlutterSecureStorage? storage, Dio? dio, Dio? refreshDio})
     : _storage = storage ?? const FlutterSecureStorage(),
       dio =
           dio ??
@@ -20,6 +20,11 @@ class ApiClient {
                 'Pragma': 'no-cache',
               },
             ),
+          ),
+      _refreshDio =
+          refreshDio ??
+          Dio(
+            BaseOptions(baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix),
           ) {
     this.dio.options.connectTimeout = const Duration(seconds: 10);
     this.dio.options.receiveTimeout = const Duration(seconds: 30);
@@ -33,10 +38,20 @@ class ApiClient {
         onError: (error, handler) async {
           // 401 em rota autenticada → tenta renovar uma vez e repete a chamada.
           final isAuthRoute = error.requestOptions.path.contains('/auth/');
-          if (error.response?.statusCode == 401 && !isAuthRoute) {
+          final alreadyRetried =
+              error.requestOptions.extra[_authRetryKey] == true;
+          if (error.response?.statusCode == 401 &&
+              !isAuthRoute &&
+              !alreadyRetried) {
+            error.requestOptions.extra[_authRetryKey] = true;
             final refreshed = await _tryRefresh();
             if (refreshed) {
               try {
+                final access = await _storage.read(key: _kAccess);
+                if (access != null) {
+                  error.requestOptions.headers['Authorization'] =
+                      'Bearer $access';
+                }
                 final retried = await this.dio.fetch(error.requestOptions);
                 return handler.resolve(retried);
               } catch (_) {}
@@ -53,9 +68,12 @@ class ApiClient {
   static const _kUser = 'hopecash_user';
   static const _kActing = 'hopecash_acting';
   static const _kLastEmail = 'hopecash_last_email';
+  static const _authRetryKey = 'hopecash_auth_retried';
 
   final FlutterSecureStorage _storage;
   final Dio dio;
+  final Dio _refreshDio;
+  Future<bool>? _refreshInFlight;
 
   Future<void> saveSession(Map<String, dynamic> data) async {
     await _storage.write(key: _kAccess, value: data['access_token'] as String);
@@ -108,15 +126,27 @@ class ApiClient {
     await _storage.delete(key: _kActing);
   }
 
-  Future<bool> _tryRefresh() async {
+  Future<bool> _tryRefresh() {
+    // Várias requisições costumam expirar juntas ao retomar o app. Como o
+    // backend rotaciona o refresh token, somente uma renovação pode ficar em
+    // voo; as demais aguardam o mesmo resultado e reutilizam o novo token.
+    final active = _refreshInFlight;
+    if (active != null) return active;
+
+    late final Future<bool> refresh;
+    refresh = _performRefresh().whenComplete(() {
+      if (identical(_refreshInFlight, refresh)) _refreshInFlight = null;
+    });
+    _refreshInFlight = refresh;
+    return refresh;
+  }
+
+  Future<bool> _performRefresh() async {
     final refresh = await _storage.read(key: _kRefresh);
     if (refresh == null) return false;
     try {
       // Dio "limpo" para não entrar em loop no interceptor.
-      final plain = Dio(
-        BaseOptions(baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix),
-      );
-      final res = await plain.post(
+      final res = await _refreshDio.post(
         '/auth/refresh',
         data: {'refresh_token': refresh},
       );
@@ -128,7 +158,7 @@ class ApiClient {
         try {
           final acting = jsonDecode(actingRaw) as Map<String, dynamic>;
           final access = await _storage.read(key: _kAccess);
-          final actRes = await plain.post(
+          final actRes = await _refreshDio.post(
             '/delegations/act-as',
             data: {'owner_user_id': acting['owner_id']},
             options: Options(headers: {'Authorization': 'Bearer $access'}),

@@ -107,10 +107,10 @@ class BudgetScreen extends ConsumerWidget {
             child: budgetAsync.when(
               loading: () => const HopeSkeleton(rows: 4),
               error: (error, _) => HopeErrorState.load(
-          error,
-          what: 'o orçamento',
-          onRetry: () => ref.invalidate(budgetForMonthProvider(month)),
-        ),
+                error,
+                what: 'o orçamento',
+                onRetry: () => ref.invalidate(budgetForMonthProvider(month)),
+              ),
               data: (budget) => budget == null
                   ? _NoBudget(month: month)
                   : _BudgetDetail(budget: budget),
@@ -293,7 +293,7 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
     return ListView(
       padding: EdgeInsets.fromLTRB(
         context.pagePadding,
-        HopeSpacing.xs,
+        context.isDesktop ? HopeSpacing.md : HopeSpacing.xs,
         context.pagePadding,
         // Espaço para o botão flutuante de lançamento da casca.
         120,
@@ -440,8 +440,14 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
             isIncome: false,
             onTapItem: (item) =>
                 _showBudgetItemSheet(context, budget, item: item),
+            onAddSubcategory: () => _showBudgetItemSheet(
+              context,
+              budget,
+              initialCategoryId: group.categoryId,
+              initialType: 'expense',
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: HopeSpacing.sm),
         ],
         if (filteredIncomeGroups.isNotEmpty)
           Padding(
@@ -460,8 +466,14 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
             isIncome: true,
             onTapItem: (item) =>
                 _showBudgetItemSheet(context, budget, item: item),
+            onAddSubcategory: () => _showBudgetItemSheet(
+              context,
+              budget,
+              initialCategoryId: group.categoryId,
+              initialType: 'income',
+            ),
           ),
-          const SizedBox(height: 8),
+          const SizedBox(height: HopeSpacing.sm),
         ],
       ],
     );
@@ -472,6 +484,8 @@ void _showBudgetItemSheet(
   BuildContext context,
   LocalBudget budget, {
   LocalBudgetItem? item,
+  String? initialCategoryId,
+  String? initialType,
 }) {
   showModalBottomSheet<void>(
     context: context,
@@ -481,7 +495,12 @@ void _showBudgetItemSheet(
     shape: const RoundedRectangleBorder(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
-    builder: (_) => _BudgetItemForm(budget: budget, item: item),
+    builder: (_) => _BudgetItemForm(
+      budget: budget,
+      item: item,
+      initialCategoryId: initialCategoryId,
+      initialType: initialType,
+    ),
   );
 }
 
@@ -686,6 +705,7 @@ class _BudgetCategoryCard extends StatelessWidget {
     required this.cards,
     required this.isIncome,
     required this.onTapItem,
+    required this.onAddSubcategory,
   });
 
   final _BudgetCategoryGroup group;
@@ -694,6 +714,7 @@ class _BudgetCategoryCard extends StatelessWidget {
   final Map<String, LocalCreditCard> cards;
   final bool isIncome;
   final ValueChanged<LocalBudgetItem> onTapItem;
+  final VoidCallback onAddSubcategory;
 
   @override
   Widget build(BuildContext context) {
@@ -708,6 +729,7 @@ class _BudgetCategoryCard extends StatelessWidget {
         : '${group.subcategoryCount} subcategorias';
 
     return Card(
+      margin: EdgeInsets.zero,
       child: ExpansionTile(
         key: PageStorageKey('budget-category-${group.categoryId}'),
         leading: CircleAvatar(
@@ -739,21 +761,45 @@ class _BudgetCategoryCard extends StatelessWidget {
             ],
           ),
         ),
-        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+        childrenPadding: const EdgeInsets.fromLTRB(
+          HopeSpacing.xxl,
+          0,
+          HopeSpacing.md,
+          HopeSpacing.sm,
+        ),
         children: [
-          for (final item in group.items)
-            _BudgetItemRow(
-              item: item,
-              subcategory: item.subcategoryId == null
-                  ? null
-                  : subcategories[item.subcategoryId],
-              account: item.accountId == null ? null : accounts[item.accountId],
-              card: item.cardId == null ? null : cards[item.cardId],
-              isIncome: isIncome,
-              color: color,
-              realized: group.realizedFor(item),
-              onTap: () => onTapItem(item),
+          Padding(
+            padding: const EdgeInsets.only(left: HopeSpacing.md),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                for (final item in group.items)
+                  _BudgetItemRow(
+                    item: item,
+                    subcategory: item.subcategoryId == null
+                        ? null
+                        : subcategories[item.subcategoryId],
+                    account: item.accountId == null
+                        ? null
+                        : accounts[item.accountId],
+                    card: item.cardId == null ? null : cards[item.cardId],
+                    isIncome: isIncome,
+                    color: color,
+                    realized: group.realizedFor(item),
+                    onTap: () => onTapItem(item),
+                  ),
+                const SizedBox(height: HopeSpacing.xs),
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: onAddSubcategory,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Adicionar subcategoria'),
+                  ),
+                ),
+              ],
             ),
+          ),
         ],
       ),
     );
@@ -931,10 +977,17 @@ Color? _parseColor(String? value) {
 }
 
 class _BudgetItemForm extends ConsumerStatefulWidget {
-  const _BudgetItemForm({required this.budget, this.item});
+  const _BudgetItemForm({
+    required this.budget,
+    this.item,
+    this.initialCategoryId,
+    this.initialType,
+  });
 
   final LocalBudget budget;
   final LocalBudgetItem? item;
+  final String? initialCategoryId;
+  final String? initialType;
 
   @override
   ConsumerState<_BudgetItemForm> createState() => _BudgetItemFormState();
@@ -963,8 +1016,9 @@ class _BudgetItemFormState extends ConsumerState<_BudgetItemForm> {
   void initState() {
     super.initState();
     final item = widget.item;
-    _categoryId = item?.categoryId;
+    _categoryId = item?.categoryId ?? widget.initialCategoryId;
     _subcategoryId = item?.subcategoryId;
+    _type = widget.initialType ?? _type;
     if (item?.cardId != null && item!.cardId!.isNotEmpty) {
       _paymentKey = 'card:${item.cardId}';
     } else if (item?.accountId != null && item!.accountId!.isNotEmpty) {
@@ -1212,9 +1266,14 @@ class _BudgetItemFormState extends ConsumerState<_BudgetItemForm> {
       destructiveAction: _editing
           ? TextButton.icon(
               onPressed: _saving ? null : _delete,
-              icon: Icon(Icons.delete_outline, color: context.hopeColors.expense),
+              icon: Icon(
+                Icons.delete_outline,
+                color: context.hopeColors.expense,
+              ),
               label: const Text('Remover do orçamento'),
-              style: TextButton.styleFrom(foregroundColor: context.hopeColors.expense),
+              style: TextButton.styleFrom(
+                foregroundColor: context.hopeColors.expense,
+              ),
             )
           : null,
     );

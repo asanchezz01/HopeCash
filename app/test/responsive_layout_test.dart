@@ -178,6 +178,45 @@ void main() {
     });
   }
 
+  testWidgets(
+    'card do orçamento abre nova subcategoria com categoria mãe preenchida',
+    (tester) async {
+      final repo = FinanceRepository(db);
+      const categoryId = 'category-food';
+      await repo.upsertCategory(
+        id: categoryId,
+        name: 'Alimentação',
+        type: 'expense',
+      );
+      final now = DateTime.now();
+      final month = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+      final budgetId = await repo.createBudget(referenceMonth: month);
+      await repo.upsertBudgetItem(
+        budgetId: budgetId,
+        categoryId: categoryId,
+        plannedAmount: 800,
+      );
+
+      await atSize(tester, _viewports['desktop']!, () async {
+        await tester.pumpWidget(wrap(const BudgetScreen()));
+        await pumpFrames(tester);
+
+        await tester.tap(find.text('Alimentação'));
+        await tester.pumpAndSettle();
+        expect(find.text('Adicionar subcategoria'), findsOneWidget);
+
+        await tester.tap(find.text('Adicionar subcategoria'));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Adicionar ao orçamento'), findsOneWidget);
+        expect(find.text('Alimentação'), findsNWidgets(2));
+        expect(find.text('Toda a categoria'), findsNWidgets(2));
+        expect(tester.takeException(), isNull);
+      });
+      await disposeApp(tester);
+    },
+  );
+
   testWidgets('painel inicial suporta fonte ampliada', (tester) async {
     await seed();
     await atSize(tester, const Size(360, 780), () async {

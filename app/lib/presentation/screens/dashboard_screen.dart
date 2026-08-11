@@ -1166,10 +1166,13 @@ class _BalancePanel extends StatelessWidget {
           padding: EdgeInsets.all(panelPadding),
           decoration: BoxDecoration(
             borderRadius: BorderRadius.circular(HopeRadius.xl),
+            border: Border.all(color: colors.softBorder),
             gradient: LinearGradient(
               begin: Alignment.topLeft,
               end: Alignment.bottomRight,
-              colors: [colors.heroStart, colors.heroEnd],
+              // O tom mais definido começa onde ficam o seletor e o saldo;
+              // assim o conteúdo não se perde no fundo da página.
+              colors: [colors.heroEnd, colors.heroStart],
             ),
             boxShadow: [
               BoxShadow(

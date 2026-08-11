@@ -62,7 +62,7 @@ const sabadoPassado = (() => {
 })();
 
 /** Golden set: cada caso compara apenas os campos declarados em `expect`. */
-const cases = [
+const cases = [ 
   {
     transcript: 'gastei 45 reais e cinquenta centavos no mercado ontem',
     expect: { type: 'expense', amount: 45.5, date: ontem, category_id: 'cat-alimentacao', paid: true, installments: 1 },

@@ -52,7 +52,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
     final showRail = width >= HopeBreakpoints.tablet;
     // Conta compartilhada somente leitura: sem botões de lançamento.
     final readOnly = ref.watch(actingAccountProvider)?.readOnly ?? false;
-    final hopeAvailable = ref.watch(aiAvailableProvider).valueOrNull ?? false;
 
     if (showRail) {
       return Scaffold(
@@ -61,7 +60,6 @@ class _ShellScreenState extends ConsumerState<ShellScreen> {
             _AdaptiveRail(
               shell: shell,
               readOnly: readOnly,
-              hopeAvailable: hopeAvailable,
               extended: _railExtended,
               onToggleExtended: () =>
                   setState(() => _railExtended = !_railExtended),
@@ -143,7 +141,6 @@ class _AdaptiveRail extends ConsumerWidget {
   const _AdaptiveRail({
     required this.shell,
     required this.readOnly,
-    required this.hopeAvailable,
     required this.extended,
     required this.onToggleExtended,
     required this.onVoice,
@@ -152,7 +149,6 @@ class _AdaptiveRail extends ConsumerWidget {
 
   final StatefulNavigationShell shell;
   final bool readOnly;
-  final bool hopeAvailable;
   final bool extended;
   final VoidCallback onToggleExtended;
   final VoidCallback onVoice;
@@ -164,9 +160,7 @@ class _AdaptiveRail extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final location = GoRouterState.of(context).uri.path;
-    final destinations = _desktopRailDestinations
-        .where((destination) => !destination.requiresAi || hopeAvailable)
-        .toList();
+    const destinations = _desktopRailDestinations;
     final themeMode = ref.watch(themeModeProvider);
     final systemIsDark =
         MediaQuery.platformBrightnessOf(context) == Brightness.dark;
@@ -677,7 +671,6 @@ class _DesktopRailDestination {
     required this.icon,
     required this.selectedIcon,
     this.branchIndex,
-    this.requiresAi = false,
   });
 
   final String section;
@@ -686,7 +679,6 @@ class _DesktopRailDestination {
   final IconData icon;
   final IconData selectedIcon;
   final int? branchIndex;
-  final bool requiresAi;
 }
 
 const _desktopRailDestinations = [
@@ -704,7 +696,6 @@ const _desktopRailDestinations = [
     path: '/ai-chat',
     icon: Icons.auto_awesome_outlined,
     selectedIcon: Icons.auto_awesome_rounded,
-    requiresAi: true,
   ),
   _DesktopRailDestination(
     section: 'Principal',
@@ -848,7 +839,7 @@ class _BottomNav extends StatelessWidget {
         NavigationDestination(
           icon: Icon(Icons.receipt_long_outlined),
           selectedIcon: Icon(Icons.receipt_long_rounded),
-          label: 'Lançamentos',
+          label: 'Histórico',
         ),
         NavigationDestination(
           icon: Icon(Icons.account_balance_outlined),

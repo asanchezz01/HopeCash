@@ -133,12 +133,14 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               reply.streaming = false;
               reply.activity = null;
               reply.error = true;
+              ref.invalidate(aiAvailableProvider);
           }
         });
         _scrollToEnd();
       }
     } catch (_) {
       if (!mounted) return;
+      ref.invalidate(aiAvailableProvider);
       setState(() {
         reply.text =
             'Não consegui falar com a Hope. Verifique sua conexão '
@@ -157,6 +159,10 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         }
       }
     }
+  }
+
+  void _retryAvailability() {
+    ref.invalidate(aiAvailableProvider);
   }
 
   Future<void> _speak(_Msg msg) async {
@@ -404,6 +410,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final availability = ref.watch(aiAvailableProvider);
+    final hopeUnavailable =
+        availability.valueOrNull == false && !availability.isLoading;
     return Scaffold(
       appBar: AppBar(
         leading: IconButton(
@@ -437,6 +446,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       body: SafeArea(
         child: Column(
           children: [
+            if (hopeUnavailable)
+              _AvailabilityNotice(onRetry: _retryAvailability),
             Expanded(
               child: _messages.isEmpty
                   ? _EmptyState(onSuggestion: _send)
@@ -512,6 +523,72 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
               ),
             ),
           ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AvailabilityNotice extends StatelessWidget {
+  const _AvailabilityNotice({required this.onRetry});
+
+  final VoidCallback onRetry;
+
+  @override
+  Widget build(BuildContext context) {
+    final scheme = Theme.of(context).colorScheme;
+    return Semantics(
+      liveRegion: true,
+      container: true,
+      label:
+          'A Hope está temporariamente indisponível. Você pode tentar novamente.',
+      child: Material(
+        color: scheme.errorContainer,
+        child: LayoutBuilder(
+          builder: (context, constraints) {
+            final message = Row(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Icon(Icons.cloud_off_outlined, color: scheme.onErrorContainer),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Text(
+                    'A Hope está temporariamente indisponível. '
+                    'Você ainda pode tentar enviar uma mensagem.',
+                    style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                      color: scheme.onErrorContainer,
+                    ),
+                  ),
+                ),
+              ],
+            );
+            final retry = TextButton(
+              onPressed: onRetry,
+              style: TextButton.styleFrom(
+                foregroundColor: scheme.onErrorContainer,
+              ),
+              child: const Text('Tentar novamente'),
+            );
+
+            return Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+              child: constraints.maxWidth < 520
+                  ? Column(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: [
+                        message,
+                        Align(alignment: Alignment.centerRight, child: retry),
+                      ],
+                    )
+                  : Row(
+                      children: [
+                        Expanded(child: message),
+                        const SizedBox(width: 16),
+                        retry,
+                      ],
+                    ),
+            );
+          },
         ),
       ),
     );

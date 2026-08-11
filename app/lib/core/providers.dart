@@ -63,10 +63,12 @@ final aiApiProvider = Provider<AiApi>(
   (ref) => AiApi(ref.watch(apiClientProvider)),
 );
 
-/// A IA (Hope) está disponível? Controla a visibilidade do chat na UI —
-/// degradação graciosa: sem Ollama, o app funciona normalmente sem os
-/// recursos de IA. Se reavalia sozinho para que uma falha transitória
-/// (token expirando, rede oscilando no boot) não esconda a Hope para sempre.
+/// A IA (Hope) está disponível neste momento?
+///
+/// Este estado informa a UI, mas nunca controla se a Hope existe na navegação:
+/// uma falha transitória de rede, autenticação ou do Ollama não pode remover a
+/// assistente do app. O status se reavalia sozinho e também pode ser invalidado
+/// manualmente pela tela do chat.
 final aiAvailableProvider = FutureProvider<bool>((ref) async {
   if (ref.watch(authStateProvider) == null) return false;
   final ok = await ref.watch(aiApiProvider).health();
@@ -330,14 +332,12 @@ final notificationAccessProvider = FutureProvider<bool>(
 
 /// Sugestões pendentes de revisão vindas de notificações bancárias.
 final notificationSuggestionsProvider = StreamProvider(
-  (ref) =>
-      ref.watch(notificationSuggestionsRepositoryProvider).watchPending(),
+  (ref) => ref.watch(notificationSuggestionsRepositoryProvider).watchPending(),
 );
 
 final notificationSuggestionsCountProvider = StreamProvider(
-  (ref) => ref
-      .watch(notificationSuggestionsRepositoryProvider)
-      .watchPendingCount(),
+  (ref) =>
+      ref.watch(notificationSuggestionsRepositoryProvider).watchPendingCount(),
 );
 
 /// Entradas do filtro "previstos" (orçamentos + transações avulsas) para o

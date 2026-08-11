@@ -18,7 +18,8 @@ class MoreScreen extends ConsumerWidget {
     final suggestionCount =
         ref.watch(notificationSuggestionsCountProvider).valueOrNull ?? 0;
     final acting = ref.watch(actingAccountProvider);
-    final hopeAvailable = ref.watch(aiAvailableProvider).valueOrNull ?? false;
+    final hopeAvailability = ref.watch(aiAvailableProvider);
+    final hopeAvailable = hopeAvailability.valueOrNull;
     final biometricAvailable =
         ref.watch(biometricAvailableProvider).valueOrNull ?? false;
     final biometricEnabled =
@@ -48,10 +49,14 @@ class MoreScreen extends ConsumerWidget {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
                 children: [
-                  _ProfileCard(name: user?.name ?? '', email: user?.email ?? ''),
+                  _ProfileCard(
+                    name: user?.name ?? '',
+                    email: user?.email ?? '',
+                  ),
                   if (acting != null) ...[
                     const SizedBox(height: HopeSpacing.sm),
-                    _DelegatedAccountBanner(ownerName: acting.ownerName,
+                    _DelegatedAccountBanner(
+                      ownerName: acting.ownerName,
                       readOnly: acting.readOnly,
                       onReturn: () async {
                         final messenger = ScaffoldMessenger.of(context);
@@ -82,14 +87,22 @@ class MoreScreen extends ConsumerWidget {
                   const SectionEyebrow('Principal'),
                   _MoreGroup(
                     rows: [
-                      if (hopeAvailable)
-                        _MoreRow(
-                          icon: Icons.auto_awesome_outlined,
-                          color: colors.card,
-                          title: 'Hope, sua assistente',
-                          subtitle: 'Pergunte sobre gastos e peça lançamentos',
-                          onTap: () => context.push('/ai-chat'),
-                        ),
+                      _MoreRow(
+                        key: const ValueKey('hope-menu-entry'),
+                        icon: Icons.auto_awesome_outlined,
+                        color: hopeAvailable == false
+                            ? colors.warning
+                            : colors.card,
+                        title: 'Hope, sua assistente',
+                        subtitle:
+                            hopeAvailability.isLoading &&
+                                !hopeAvailability.hasValue
+                            ? 'Verificando disponibilidade…'
+                            : hopeAvailable == false
+                            ? 'Temporariamente indisponível — toque para tentar'
+                            : 'Pergunte sobre gastos e peça lançamentos',
+                        onTap: () => context.push('/ai-chat'),
+                      ),
                       _MoreRow(
                         icon: Icons.receipt_long_outlined,
                         color: scheme.primary,
@@ -227,7 +240,8 @@ class MoreScreen extends ConsumerWidget {
                         icon: Icons.hub_outlined,
                         color: colors.investment,
                         title: 'Apps conectados',
-                        subtitle: 'Agentes de IA com acesso à sua conta (ChatGPT, Claude e outros)',
+                        subtitle:
+                            'Agentes de IA com acesso à sua conta (ChatGPT, Claude e outros)',
                         onTap: () => context.push('/more/api-tokens'),
                       ),
                       _MoreRow(
@@ -506,6 +520,7 @@ class _MoreGroup extends StatelessWidget {
 
 class _MoreRow extends StatelessWidget {
   const _MoreRow({
+    super.key,
     required this.icon,
     required this.color,
     required this.title,
@@ -617,7 +632,10 @@ class _CountBadge extends StatelessWidget {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: HopeSpacing.xs, vertical: 3),
+      padding: const EdgeInsets.symmetric(
+        horizontal: HopeSpacing.xs,
+        vertical: 3,
+      ),
       decoration: BoxDecoration(
         color: scheme.primaryContainer,
         borderRadius: BorderRadius.circular(HopeRadius.pill),

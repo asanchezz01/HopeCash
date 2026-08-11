@@ -343,6 +343,11 @@ class AppTheme {
         labelBehavior: NavigationDestinationLabelBehavior.alwaysShow,
         labelTextStyle: WidgetStateProperty.resolveWith(
           (states) => (textTheme.labelMedium ?? const TextStyle()).copyWith(
+            // Quatro destinos precisam caber também na largura útil dos
+            // iPhones menores. 11 pt segue o piso tipográfico do iOS e evita
+            // quebrar rótulos longos como "Lançamentos".
+            fontSize: 11,
+            letterSpacing: 0,
             fontWeight: states.contains(WidgetState.selected)
                 ? FontWeight.w700
                 : FontWeight.w500,

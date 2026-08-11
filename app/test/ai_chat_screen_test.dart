@@ -40,6 +40,33 @@ class _FakeAiApi extends AiApi {
 }
 
 void main() {
+  testWidgets(
+    'mantém o chat acessível e oferece nova tentativa quando offline',
+    (tester) async {
+      await tester.binding.setSurfaceSize(const Size(360, 640));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [aiAvailableProvider.overrideWith((ref) async => false)],
+          child: MaterialApp(
+            theme: AppTheme.light(),
+            home: const AiChatScreen(),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        find.textContaining('temporariamente indisponível'),
+        findsOneWidget,
+      );
+      expect(find.text('Tentar novamente'), findsOneWidget);
+      expect(find.byType(TextField), findsOneWidget);
+      expect(tester.widget<TextField>(find.byType(TextField)).enabled, isTrue);
+    },
+  );
+
   testWidgets('permite sair do chat aberto diretamente no desktop', (
     tester,
   ) async {
@@ -79,7 +106,10 @@ void main() {
 
     await tester.pumpWidget(
       ProviderScope(
-        overrides: [aiApiProvider.overrideWithValue(_FakeAiApi())],
+        overrides: [
+          aiApiProvider.overrideWithValue(_FakeAiApi()),
+          aiAvailableProvider.overrideWith((ref) async => true),
+        ],
         child: MaterialApp(theme: AppTheme.light(), home: const AiChatScreen()),
       ),
     );
@@ -105,7 +135,10 @@ void main() {
 
       await tester.pumpWidget(
         ProviderScope(
-          overrides: [aiApiProvider.overrideWithValue(_FakeAiApi())],
+          overrides: [
+            aiApiProvider.overrideWithValue(_FakeAiApi()),
+            aiAvailableProvider.overrideWith((ref) async => true),
+          ],
           child: MaterialApp(
             theme: AppTheme.light(),
             home: const AiChatScreen(),

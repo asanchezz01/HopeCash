@@ -52,6 +52,16 @@ export const config = {
     from: process.env.MAIL_FROM || process.env.MAIL_USER || 'no-reply@hopecash.app',
     useTls: process.env.MAIL_USE_TLS !== 'false',
   },
+  support: {
+    emailTo:
+      process.env.SUPPORT_EMAIL_TO ||
+      process.env.MAIL_FROM ||
+      process.env.MAIL_USER ||
+      'suporte@hopecash.app',
+    subjectPrefix: process.env.SUPPORT_EMAIL_SUBJECT_PREFIX || '[HopeCash Suporte]',
+    rateLimitMax: Number(process.env.SUPPORT_RATE_LIMIT_MAX || 5),
+    rateLimitWindowMs: Number(process.env.SUPPORT_RATE_LIMIT_WINDOW_MINUTES || 15) * 60_000,
+  },
   // URL pública deste backend — usada nos metadados de descoberta OAuth do
   // MCP (issuer + authorization/token/registration endpoints, RFC 8414).
   publicUrl: (process.env.API_BASE_URL || 'http://localhost:3000').replace(/\/+$/, ''),

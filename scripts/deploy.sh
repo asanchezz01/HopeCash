@@ -109,6 +109,10 @@ MAIL_USER="${MAIL_USER:-}"
 MAIL_PASS="${MAIL_PASS:-}"
 MAIL_FROM="${MAIL_FROM:-}"
 MAIL_USE_TLS="${MAIL_USE_TLS:-true}"
+SUPPORT_EMAIL_TO="${SUPPORT_EMAIL_TO:-${MAIL_FROM:-${MAIL_USER:-suporte@hopecash.app}}}"
+SUPPORT_EMAIL_SUBJECT_PREFIX="${SUPPORT_EMAIL_SUBJECT_PREFIX:-[HopeCash Suporte]}"
+SUPPORT_RATE_LIMIT_MAX="${SUPPORT_RATE_LIMIT_MAX:-5}"
+SUPPORT_RATE_LIMIT_WINDOW_MINUTES="${SUPPORT_RATE_LIMIT_WINDOW_MINUTES:-15}"
 
 # Notificacoes push (Firebase Cloud Messaging) — preservadas do .env existente
 # no servidor (o operador preenche uma vez em /opt/hopecash/.env; ver
@@ -164,6 +168,10 @@ MAIL_USER=$MAIL_USER
 MAIL_PASS=$MAIL_PASS
 MAIL_FROM=$MAIL_FROM
 MAIL_USE_TLS=$MAIL_USE_TLS
+SUPPORT_EMAIL_TO=$SUPPORT_EMAIL_TO
+SUPPORT_EMAIL_SUBJECT_PREFIX=$SUPPORT_EMAIL_SUBJECT_PREFIX
+SUPPORT_RATE_LIMIT_MAX=$SUPPORT_RATE_LIMIT_MAX
+SUPPORT_RATE_LIMIT_WINDOW_MINUTES=$SUPPORT_RATE_LIMIT_WINDOW_MINUTES
 FIREBASE_ENABLED=$FIREBASE_ENABLED
 FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID
 FIREBASE_CLIENT_EMAIL=$FIREBASE_CLIENT_EMAIL
@@ -277,6 +285,14 @@ done
 for path in / /sqlite3.wasm /drift_worker.js; do
   curl -fsS "http://127.0.0.1:${WEB_PORT}${path}" >/dev/null
 done
+
+# As paginas publicas precisam responder com o HTML proprio. Verificar apenas o
+# status 200 nao basta porque o fallback da SPA tambem devolve 200 quando o
+# arquivo estatico nao entrou na imagem.
+curl -fsS "http://127.0.0.1:${WEB_PORT}/marketing/" \
+  | grep -F '<body class="marketing-page">' >/dev/null
+curl -fsS "http://127.0.0.1:${WEB_PORT}/suporte/" \
+  | grep -F '<body class="support-page">' >/dev/null
 
 # Retaguarda: valida que a SPA responde.
 curl -fsS "http://127.0.0.1:${RETAGUARDA_PORT}/" >/dev/null

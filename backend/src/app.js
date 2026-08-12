@@ -47,6 +47,7 @@ import patRoutes from './modules/pat/pat.routes.js';
 import notificationsInboxRoutes from './modules/push/notificationsInbox.routes.js';
 import oauthRoutes from './modules/oauth/oauth.routes.js';
 import wellknownRoutes from './modules/oauth/wellknown.routes.js';
+import supportRoutes from './modules/support/support.routes.js';
 
 export function createApp() {
   const app = express();
@@ -126,6 +127,10 @@ export function createApp() {
     },
   }));
   v1.use('/auth', authRoutes);
+
+  // Formulário público das páginas de suporte/marketing. Protegido por
+  // validação, honeypot e rate limit próprio; não exige uma conta no app.
+  v1.use('/support', supportRoutes);
 
   // OAuth do MCP (registro de cliente, /authorize, /token) — deliberadamente
   // público: é assim que se ganha um token, não pode exigir um token antes.

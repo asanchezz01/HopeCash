@@ -31,6 +31,7 @@ tags:
   - name: Sync
   - name: AI
   - name: Push
+  - name: Support
   - name: Retaguarda
 
 paths:
@@ -39,6 +40,32 @@ paths:
       security: []
       summary: Healthcheck
       responses: { '200': { description: OK } }
+
+  /support:
+    post:
+      tags: [Support]
+      security: []
+      summary: Envia uma solicitação pública de suporte
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, email, category, message]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 120 }
+                email: { type: string, format: email, maxLength: 254 }
+                category: { type: string, enum: [access, sync, transactions, imports, hope, planning, other] }
+                app_version: { type: string, maxLength: 40 }
+                platform: { type: string, enum: [ios, android, web, ''] }
+                message: { type: string, minLength: 20, maxLength: 4000 }
+                website: { type: string, description: Honeypot; deve permanecer vazio }
+      responses:
+        '201': { description: Solicitação recebida }
+        '422': { description: Dados inválidos }
+        '429': { description: Limite temporário de solicitações atingido }
+        '503': { description: Canal de e-mail temporariamente indisponível }
 
   /auth/register:
     post:

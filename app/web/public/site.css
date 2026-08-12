@@ -70,6 +70,10 @@ svg {
   max-width: 100%;
 }
 
+img {
+  height: auto;
+}
+
 button,
 input,
 select,
@@ -949,7 +953,7 @@ a {
 
   .marketing-hero {
     min-height: 0;
-    padding: 52px 0 76px;
+    padding: 42px 0 68px;
   }
 
   .marketing-hero::before {
@@ -958,7 +962,8 @@ a {
   }
 
   .hero-copy h1 {
-    font-size: clamp(3rem, 16vw, 4.4rem);
+    font-size: clamp(2.75rem, 12vw, 3.55rem);
+    line-height: 0.96;
   }
 
   .hero-copy h1 em {
@@ -966,6 +971,7 @@ a {
   }
 
   .hero-actions {
+    margin-top: 28px;
     align-items: stretch;
     flex-direction: column;
   }
@@ -975,45 +981,119 @@ a {
   }
 
   .hero-demonstration {
-    min-height: 600px;
+    min-height: 0;
+    display: flex;
+    flex-direction: column;
+    margin-top: 4px;
   }
 
   .phone-frame {
-    right: 0;
-    width: 82%;
+    position: relative;
+    top: auto;
+    right: auto;
+    width: min(270px, 78vw);
+    margin: 0 auto;
+    padding: 7px;
+    border-radius: 30px;
+  }
+
+  .phone-frame img {
+    border-radius: 23px;
   }
 
   .hope-thread {
-    top: 250px;
-    width: 78%;
+    position: relative;
+    top: auto;
+    left: auto;
+    width: 100%;
+    margin: 20px auto 0;
+  }
+
+  .message {
+    padding: 14px 16px;
+    box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+  }
+
+  .message.user {
+    width: 86%;
+    margin-left: auto;
+  }
+
+  .message.hope {
+    width: 92%;
+  }
+
+  .flow-path {
+    display: none;
   }
 
   .story-section,
   .capability-section,
   .final-cta {
-    padding: 84px 0;
+    padding: 76px 0;
   }
 
   .story-grid {
-    gap: 44px;
+    gap: 38px;
+  }
+
+  .section-title {
+    font-size: clamp(2.25rem, 10vw, 3rem);
+    line-height: 1;
+  }
+
+  .section-copy {
+    font-size: 1rem;
   }
 
   .story-visual {
-    min-height: 520px;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+    align-items: end;
   }
 
   .screenshot-panel {
-    width: 76%;
+    position: relative;
+    width: 100%;
+    padding: 5px;
+    border-radius: 22px;
+    box-shadow: 0 16px 42px rgba(2, 10, 20, 0.22);
+  }
+
+  .screenshot-panel img {
+    border-radius: 17px;
   }
 
   .screenshot-panel.primary-shot {
+    top: auto;
     left: 0;
     transform: none;
   }
 
   .screenshot-panel.secondary-shot {
-    right: 0;
+    right: auto;
+    bottom: auto;
     transform: none;
+  }
+
+  .story-visual .screenshot-panel:only-child {
+    width: min(270px, 74vw);
+    grid-column: 1 / -1;
+    justify-self: center;
+  }
+
+  .story-list {
+    margin-top: 24px;
+  }
+
+  .story-list li {
+    padding: 13px 0 13px 30px;
+  }
+
+  .story-list li::before {
+    top: 20px;
   }
 
   .ledger-row {
@@ -1061,6 +1141,41 @@ a {
     align-items: flex-start;
     flex-direction: column;
     padding: 28px 0;
+  }
+}
+
+@media (max-width: 380px) {
+  .brand {
+    gap: 8px;
+    font-size: 1.05rem;
+  }
+
+  .brand img {
+    width: 38px;
+    height: 38px;
+  }
+
+  .nav-links .button {
+    padding: 0 11px;
+    font-size: 0.88rem;
+  }
+
+  .hero-copy h1 {
+    font-size: clamp(2.55rem, 13vw, 3rem);
+  }
+
+  .feature-strip-inner {
+    grid-template-columns: 1fr;
+  }
+
+  .feature-strip span {
+    padding: 17px 14px;
+    border-right: 0;
+    border-bottom: 1px solid var(--line-dark);
+  }
+
+  .feature-strip span:last-child {
+    border-bottom: 0;
   }
 }
 

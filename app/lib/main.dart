@@ -64,8 +64,21 @@ Future<void> main() async {
     );
   }
 
+  // O iOS suspende timers e conexões enquanto o app fica em segundo plano.
+  // Na retomada, renova preventivamente um access token vencido/quase vencido
+  // e força uma sincronização imediata, sem esperar o próximo timer periódico.
+  Future<void> recoverUserSession() async {
+    if (container.read(authStateProvider) == null) return;
+    if (container.read(appLockedProvider)) return;
+    final ready = await container.read(apiClientProvider).ensureSessionFresh();
+    container.invalidate(aiAvailableProvider);
+    if (!ready) return;
+    await container.read(syncServiceProvider).syncNow();
+  }
+
   AppLifecycleListener(
     onResume: () {
+      unawaited(recoverUserSession());
       unawaited(ingestNotifications());
       unawaited(reconcilePush());
     },

@@ -1,0 +1,200 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-08-12T17:36:18-03:00",
+  "title": "Design System: HopeCash",
+  "extensions": {
+    "colorMeta": {
+      "night": {
+        "role": "neutral",
+        "displayName": "Azul-petróleo noturno",
+        "canonical": "#07111f",
+        "tonalRamp": ["#02070d", "#07111f", "#0d1b2a", "#14273a", "#405469", "#9fb0bf", "#dce5ec", "#f5f8fa"]
+      },
+      "night-raised": {
+        "role": "neutral",
+        "displayName": "Azul-petróleo elevado",
+        "canonical": "#0d1b2a",
+        "tonalRamp": ["#02070d", "#07111f", "#0d1b2a", "#14273a", "#405469", "#9fb0bf", "#dce5ec", "#f5f8fa"]
+      },
+      "navy": {
+        "role": "neutral",
+        "displayName": "Azul-marinho estrutural",
+        "canonical": "#14273a",
+        "tonalRamp": ["#02070d", "#07111f", "#0d1b2a", "#14273a", "#405469", "#9fb0bf", "#dce5ec", "#f5f8fa"]
+      },
+      "hope-mint": {
+        "role": "primary",
+        "displayName": "Verde-esperança",
+        "canonical": "#57d6a1",
+        "tonalRamp": ["#04231a", "#064d35", "#0d7f57", "#28ad79", "#57d6a1", "#8be5bd", "#c9f4e1", "#effcf6"]
+      },
+      "hope-mint-deep": {
+        "role": "primary",
+        "displayName": "Verde-esperança profundo",
+        "canonical": "#0d7f57",
+        "tonalRamp": ["#031b13", "#06402c", "#0d7f57", "#20a873", "#57d6a1", "#8be5bd", "#c9f4e1", "#effcf6"]
+      },
+      "sky": {
+        "role": "secondary",
+        "displayName": "Céu suave",
+        "canonical": "#8db2ff",
+        "tonalRamp": ["#07162f", "#132c58", "#2f5594", "#5f86cf", "#8db2ff", "#b4ccff", "#dbe6ff", "#f3f7ff"]
+      },
+      "lilac": {
+        "role": "secondary",
+        "displayName": "Lilás suave",
+        "canonical": "#b8a7ff",
+        "tonalRamp": ["#1c143b", "#362765", "#5b4892", "#8974c2", "#b8a7ff", "#d0c5ff", "#e8e2ff", "#f7f4ff"]
+      },
+      "rose": {
+        "role": "tertiary",
+        "displayName": "Rosa semântico",
+        "canonical": "#ff9e9e",
+        "tonalRamp": ["#3a1015", "#691f28", "#a43c48", "#d86772", "#ff9e9e", "#ffbcbc", "#ffdddd", "#fff4f4"]
+      },
+      "gold": {
+        "role": "tertiary",
+        "displayName": "Ouro de atenção",
+        "canonical": "#f2bc62",
+        "tonalRamp": ["#301d05", "#5d3c0d", "#8f651e", "#c6933c", "#f2bc62", "#f6d18f", "#fae5bd", "#fff8e8"]
+      },
+      "paper": {
+        "role": "neutral",
+        "displayName": "Papel frio",
+        "canonical": "#f5f8fa",
+        "tonalRamp": ["#11171c", "#29333b", "#52657a", "#8393a2", "#aab8c4", "#dce5ec", "#f5f8fa", "#ffffff"]
+      },
+      "white": {
+        "role": "neutral",
+        "displayName": "Branco",
+        "canonical": "#ffffff",
+        "tonalRamp": ["#11171c", "#29333b", "#52657a", "#8393a2", "#aab8c4", "#dce5ec", "#f5f8fa", "#ffffff"]
+      },
+      "slate": {
+        "role": "neutral",
+        "displayName": "Ardósia",
+        "canonical": "#52657a",
+        "tonalRamp": ["#101821", "#263443", "#52657a", "#718397", "#96a5b3", "#bec8d1", "#e0e6eb", "#f6f8fa"]
+      },
+      "line-dark": {
+        "role": "neutral",
+        "displayName": "Linha escura",
+        "canonical": "#26394b",
+        "tonalRamp": ["#07111f", "#0d1b2a", "#14273a", "#26394b", "#52657a", "#8393a2", "#dce5ec", "#f5f8fa"]
+      },
+      "line-light": {
+        "role": "neutral",
+        "displayName": "Linha clara",
+        "canonical": "#dce5ec",
+        "tonalRamp": ["#11171c", "#29333b", "#52657a", "#8393a2", "#aab8c4", "#dce5ec", "#f5f8fa", "#ffffff"]
+      }
+    },
+    "typographyMeta": {
+      "display": { "displayName": "Voz principal", "purpose": "Uma promessa dominante por superfície." },
+      "headline": { "displayName": "Abertura de capítulo", "purpose": "Introduz seções narrativas." },
+      "body": { "displayName": "Leitura funcional", "purpose": "Explicações, FAQs e formulários." },
+      "label": { "displayName": "Ação e orientação", "purpose": "Botões, navegação e rótulos." }
+    },
+    "shadows": [
+      { "name": "object-elevated", "value": "0 24px 70px rgba(2, 10, 20, 0.28)", "purpose": "Dispositivos e capturas destacadas." },
+      { "name": "object-mobile", "value": "0 16px 42px rgba(2, 10, 20, 0.22)", "purpose": "Capturas em telas estreitas sem excesso de peso visual." },
+      { "name": "message", "value": "0 15px 38px rgba(0, 0, 0, 0.24)", "purpose": "Balões sobre uma tela real." },
+      { "name": "message-mobile", "value": "0 12px 30px rgba(0, 0, 0, 0.20)", "purpose": "Balões legíveis sobre capturas em telas estreitas." },
+      { "name": "action", "value": "0 10px 28px rgba(87, 214, 161, 0.18)", "purpose": "Botão primário no ambiente noturno." },
+      { "name": "paper-suspended", "value": "0 24px 60px rgba(13, 27, 42, 0.08)", "purpose": "Formulário sobre fundo claro." }
+    ],
+    "motion": [
+      { "name": "interaction-fast", "value": "160ms ease-out", "purpose": "Hover e pressão de controles." },
+      { "name": "reveal-gentle", "value": "520ms cubic-bezier(0.16, 1, 0.3, 1)", "purpose": "Entrada discreta de blocos visíveis." },
+      { "name": "reduced-motion", "value": "0.01ms", "purpose": "Remove transições quando o usuário prefere movimento reduzido." }
+    ],
+    "breakpoints": [
+      { "name": "stack", "value": "900px" },
+      { "name": "mobile", "value": "640px" },
+      { "name": "narrow", "value": "380px" }
+    ]
+  },
+  "components": [
+    {
+      "name": "Primary Button",
+      "kind": "button",
+      "refersTo": "button-primary",
+      "description": "Ação principal sobre o ambiente noturno.",
+      "html": "<button class=\"ds-btn-primary\">Organizar minhas finanças</button>",
+      "css": ".ds-btn-primary{min-height:48px;padding:0 20px;border:1px solid transparent;border-radius:12px;color:#04231a;background:#57d6a1;font:760 .94rem/1 Aptos,Segoe UI,sans-serif;box-shadow:0 10px 28px rgba(87,214,161,.18);cursor:pointer;transition:transform 160ms ease-out,background-color 160ms ease-out}.ds-btn-primary:hover{background:#72e2b3;transform:translateY(-2px)}.ds-btn-primary:active{transform:none}.ds-btn-primary:focus-visible{outline:3px solid #f2bc62;outline-offset:4px}@media(max-width:640px){.ds-btn-primary{width:100%}}@media(prefers-reduced-motion:reduce){.ds-btn-primary{transition-duration:.01ms}}"
+    },
+    {
+      "name": "Support Button",
+      "kind": "button",
+      "refersTo": "button-support",
+      "description": "Ação principal em superfícies claras.",
+      "html": "<button class=\"ds-btn-support\">Enviar solicitação</button>",
+      "css": ".ds-btn-support{min-height:48px;padding:0 20px;border:1px solid transparent;border-radius:12px;color:#fff;background:#0d7f57;font:760 .94rem/1 Aptos,Segoe UI,sans-serif;box-shadow:0 10px 26px rgba(13,127,87,.18);cursor:pointer;transition:transform 160ms ease-out,background-color 160ms ease-out}.ds-btn-support:hover{background:#096d4a;transform:translateY(-2px)}.ds-btn-support:active{transform:none}.ds-btn-support:focus-visible{outline:3px solid #f2bc62;outline-offset:4px}@media(max-width:640px){.ds-btn-support{width:100%}}@media(prefers-reduced-motion:reduce){.ds-btn-support{transition-duration:.01ms}}"
+    },
+    {
+      "name": "Secondary Button",
+      "kind": "button",
+      "description": "Ação alternativa de baixa ênfase.",
+      "html": "<button class=\"ds-btn-secondary\">Ver como funciona</button>",
+      "css": ".ds-btn-secondary{min-height:48px;padding:0 20px;border:1px solid currentColor;border-radius:12px;color:#fff;background:transparent;font:760 .94rem/1 Aptos,Segoe UI,sans-serif;cursor:pointer;transition:transform 160ms ease-out,background-color 160ms ease-out}.ds-btn-secondary:hover{color:#57d6a1;background:rgba(87,214,161,.08);transform:translateY(-2px)}.ds-btn-secondary:focus-visible{outline:3px solid #f2bc62;outline-offset:4px}@media(max-width:640px){.ds-btn-secondary{width:100%}}@media(prefers-reduced-motion:reduce){.ds-btn-secondary{transition-duration:.01ms}}"
+    },
+    {
+      "name": "Text Field",
+      "kind": "input",
+      "refersTo": "input",
+      "description": "Campo claro de formulário com foco explícito.",
+      "html": "<label class=\"ds-field\">E-mail para resposta <input type=\"email\" placeholder=\"voce@exemplo.com\"></label>",
+      "css": ".ds-field{display:grid;gap:7px;color:#0d1b2a;font:720 .92rem/1.4 Aptos,Segoe UI,sans-serif}.ds-field input{box-sizing:border-box;width:100%;min-height:50px;padding:0 14px;color:#0d1b2a;background:#fbfcfd;border:1px solid #aab8c4;border-radius:12px;font:400 17px/1.55 Aptos,Segoe UI,sans-serif}.ds-field input:focus{border-color:#0d7f57;outline:3px solid rgba(13,127,87,.18)}"
+    },
+    {
+      "name": "Support Surface",
+      "kind": "card",
+      "description": "Papel suspenso que concentra uma tarefa de resolução.",
+      "html": "<section class=\"ds-support-card\"><h2>Fale com o suporte</h2><p>Descreva o que aconteceu e o que você esperava encontrar.</p></section>",
+      "css": ".ds-support-card{box-sizing:border-box;width:100%;max-width:520px;padding:34px;color:#0d1b2a;background:#fff;border:1px solid #dce5ec;border-radius:16px;box-shadow:0 24px 60px rgba(13,27,42,.08);font:400 17px/1.55 Aptos,Segoe UI,sans-serif}.ds-support-card h2{margin:0;font:710 clamp(2rem,8vw,2.4rem)/1.02 Bricolage Grotesque,Arial Narrow,sans-serif;letter-spacing:-.035em}.ds-support-card p{margin:12px 0 0;color:#52657a}@media(max-width:640px){.ds-support-card{padding:24px 20px}}"
+    },
+    {
+      "name": "FAQ Row",
+      "kind": "custom",
+      "description": "Pergunta expansível sem caixa decorativa.",
+      "html": "<details class=\"ds-faq\"><summary>Como corrigir um lançamento?</summary><p>Abra o lançamento, revise os dados e salve as alterações.</p></details>",
+      "css": ".ds-faq{color:#0d1b2a;border-top:1px solid #dce5ec;border-bottom:1px solid #dce5ec;font-family:Aptos,Segoe UI,sans-serif}.ds-faq summary{box-sizing:border-box;min-height:62px;padding:18px 36px 18px 0;display:flex;align-items:center;position:relative;font-weight:720;cursor:pointer;list-style:none}.ds-faq summary::after{content:'+';position:absolute;right:4px;color:#0d7f57;font:720 1.5rem Bricolage Grotesque,Arial Narrow,sans-serif}.ds-faq[open] summary::after{content:'−'}.ds-faq p{max-width:62ch;margin:-2px 0 20px;color:#52657a;line-height:1.55}.ds-faq summary:focus-visible{outline:3px solid #f2bc62;outline-offset:4px}"
+    },
+    {
+      "name": "Hope Conversation",
+      "kind": "custom",
+      "description": "Par pergunta-resposta ligado à evidência real do produto.",
+      "html": "<div class=\"ds-thread\"><div class=\"ds-message ds-user\"><strong>Você</strong><p>Quanto posso gastar sem comprometer o mês?</p></div><div class=\"ds-message ds-hope\"><strong>Hope</strong><p>Vou considerar seus saldos, orçamento, faturas e vencimentos.</p></div></div>",
+      "css": ".ds-thread{box-sizing:border-box;width:min(310px,100%);font:400 14px/1.4 Aptos,Segoe UI,sans-serif}.ds-message{box-sizing:border-box;padding:15px 17px;border-radius:16px;box-shadow:0 15px 38px rgba(0,0,0,.24);overflow-wrap:anywhere}.ds-message p{margin:4px 0 0}.ds-user{margin-left:42px;color:#cfe0ff;background:#17335b;border-bottom-right-radius:4px}.ds-hope{margin-top:12px;color:#0d1b2a;background:#d8f1e6;border-top-left-radius:4px}@media(max-width:380px){.ds-thread{font-size:13px}.ds-message{padding:13px 14px;box-shadow:0 12px 30px rgba(0,0,0,.2)}.ds-user{margin-left:24px}}"
+    }
+  ],
+  "narrative": {
+    "northStar": "O Caminho Financeiro Conversacional",
+    "overview": "O HopeCash transforma informações financeiras dispersas em um percurso legível: ver, entender, planejar e agir. O sistema combina um ambiente noturno concentrado com superfícies claras de resolução, usando verde-esperança como sinal de progresso e controle — nunca como promessa de resultado financeiro.\n\nA identidade é tecnológica sem ser fria. Tipografia expressiva dá voz às grandes ideias; texto funcional, telas reais e mensagens diretas sustentam a confiança. Composições podem ser assimétricas, mas a leitura sempre segue um caminho evidente e responsável.",
+    "keyCharacteristics": [
+      "contraste entre azul-petróleo profundo e papel claro;",
+      "verde-esperança reservado para ações, progresso e ênfase;",
+      "títulos compactos e expressivos combinados a corpo calmo;",
+      "evidência do produto por dados e telas reais, não por promessas abstratas;",
+      "profundidade ambiental, foco visível e movimento discreto."
+    ],
+    "rules": [
+      { "name": "The Hope Signal Rule", "body": "O verde é um sinal raro e funcional: ação, progresso ou palavra-chave. Grandes áreas verdes só aparecem quando a própria superfície é a mensagem.", "section": "colors" },
+      { "name": "The One Loud Sentence Rule", "body": "Uma viewport recebe um único título dominante; os demais níveis orientam, não disputam atenção.", "section": "typography" },
+      { "name": "The Evidence Floats Rule", "body": "Elevação destaca evidência ou ação; conteúdo editorial comum permanece plano.", "section": "elevation" }
+    ],
+    "dos": [
+      "**Do** use telas reais e linguagem direta para provar uma capacidade.",
+      "**Do** preserve foco visível, alvos de toque confortáveis e estados comunicados por texto.",
+      "**Do** use assimetria para conduzir a leitura e sequência linear em telas estreitas.",
+      "**Do** respeite `prefers-reduced-motion` e mantenha todo conteúdo acessível sem JavaScript."
+    ],
+    "donts": [
+      "**Don't** invente métricas, depoimentos, preços ou promessas de ganho.",
+      "**Don't** transforme recursos em grades repetitivas de cartões sem narrativa.",
+      "**Don't** use o verde como preenchimento decorativo indiscriminado.",
+      "**Don't** deixe mockups, rotações ou sobreposições criarem rolagem horizontal.",
+      "**Don't** solicite senhas, tokens ou dados financeiros sensíveis em formulários de suporte."
+    ]
+  }
+}

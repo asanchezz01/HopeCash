@@ -58,6 +58,10 @@ RUN sed -i \
       -e "s|__FIREBASE_WEB_APP_ID__|${FIREBASE_WEB_APP_ID}|g" \
       build/web/firebase-messaging-sw.js
 
+# A página pública de suporte usa a mesma API compilada no app, sem manter uma
+# segunda URL fixa em JavaScript.
+RUN sed -i "s|__API_BASE_URL__|${API_BASE_URL}|g" build/web/public/support.js
+
 FROM nginx:alpine
 
 COPY --from=build /app/build/web /usr/share/nginx/html

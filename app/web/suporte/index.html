@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#f5f8fa">
+    <meta name="description" content="Central pública de suporte do HopeCash: respostas rápidas e formulário para solicitar ajuda.">
+    <link rel="canonical" href="https://hopecash.coagru.com.br/suporte/">
+    <link rel="icon" href="/favicon.svg" type="image/svg+xml">
+    <link rel="stylesheet" href="/public/site.css">
+    <title>Suporte HopeCash</title>
+  </head>
+  <body class="support-page">
+    <!--
+      THESIS: Suporte reduz incerteza antes de pedir dados; recusamos uma central genérica feita de cartões e atalhos repetidos.
+      OWN-WORLD: Papel claro para leitura, cabeçalho azul-petróleo, verde-esperança e uma linha contínua de perguntas até o contato.
+      STORY: O usuário tenta resolver a dúvida, entende o que informar e envia uma solicitação sem expor dados financeiros.
+      FIRST VIEWPORT: Orientação clara e aviso de segurança; perguntas frequentes e formulário aparecem juntos logo abaixo.
+      FORM: Caminho de resolução direta, extensão do conceito conversacional, seed key 68f48f38.
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+    -->
+    <a class="skip-link" href="#conteudo">Ir para o conteúdo</a>
+    <header class="site-header">
+      <nav class="nav-shell" aria-label="Navegação principal">
+        <a class="brand" href="/" aria-label="HopeCash — abrir aplicativo">
+          <img src="/public/images/hopecash-icon.svg" alt="">
+          <span>Hope<strong>Cash</strong></span>
+        </a>
+        <div class="nav-links">
+          <a class="nav-link" href="/marketing/">Conheça o app</a>
+          <a class="button" href="/">Abrir o HopeCash</a>
+        </div>
+      </nav>
+    </header>
+
+    <main id="conteudo">
+      <section class="support-hero">
+        <div class="container support-hero-grid">
+          <div class="reveal">
+            <h1 class="display-title">Vamos resolver isso juntos.</h1>
+            <p>Encontre respostas para as dúvidas mais comuns ou envie uma solicitação com o contexto necessário para investigarmos o problema.</p>
+          </div>
+          <aside class="support-note reveal" aria-label="Orientação de segurança">
+            <strong>Proteja seus dados</strong>
+            Nunca envie senhas, tokens, números completos de cartão ou informações bancárias sensíveis.
+          </aside>
+        </div>
+      </section>
+
+      <section class="support-main">
+        <div class="container support-layout">
+          <div class="reveal">
+            <h2>Respostas rápidas</h2>
+            <div class="faq-list">
+              <details>
+                <summary>Não consigo entrar na minha conta</summary>
+                <p>Confira o e-mail informado e use “Esqueci minha senha” na tela de acesso. Se o problema continuar, informe no formulário qual mensagem apareceu.</p>
+              </details>
+              <details>
+                <summary>Meus dados ainda não sincronizaram</summary>
+                <p>Confirme sua conexão e abra “Mais” para verificar o estado da sincronização. O HopeCash mantém os dados locais e tenta sincronizar novamente quando a conexão retorna.</p>
+              </details>
+              <details>
+                <summary>Como corrijo um lançamento?</summary>
+                <p>Abra o Histórico, selecione o lançamento e use a opção de editar. Revise valor, data, categoria, conta ou cartão antes de salvar.</p>
+              </details>
+              <details>
+                <summary>Como conversar com a Hope?</summary>
+                <p>Abra a Hope pelo atalho no início. Você pode perguntar sobre saldos, gastos, orçamento, faturas e vencimentos por texto ou voz. Alterações só acontecem após sua confirmação.</p>
+              </details>
+              <details>
+                <summary>Como importar um extrato?</summary>
+                <p>Em “Mais”, acesse “Importar extrato”, selecione o arquivo e revise a conciliação antes de confirmar qualquer novo lançamento.</p>
+              </details>
+              <details>
+                <summary>Posso usar o app sem internet?</summary>
+                <p>Sim. Depois do primeiro acesso, as principais informações ficam disponíveis localmente. Operações que dependem do servidor aguardam a conexão para sincronizar.</p>
+              </details>
+            </div>
+          </div>
+
+          <div class="support-form-wrap reveal">
+            <h2>Fale com o suporte</h2>
+            <p>Descreva o que aconteceu e o que você esperava encontrar. Campos marcados com * são obrigatórios.</p>
+            <form id="support-form" novalidate>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="support-name">Nome *</label>
+                  <input id="support-name" name="name" type="text" autocomplete="name" minlength="2" maxlength="120" required>
+                </div>
+                <div class="field">
+                  <label for="support-email">E-mail para resposta *</label>
+                  <input id="support-email" name="email" type="email" autocomplete="email" maxlength="254" required>
+                </div>
+              </div>
+              <div class="field">
+                <label for="support-category">Assunto *</label>
+                <select id="support-category" name="category" required>
+                  <option value="">Selecione</option>
+                  <option value="access">Acesso e senha</option>
+                  <option value="sync">Sincronização</option>
+                  <option value="transactions">Lançamentos</option>
+                  <option value="imports">Importação de extrato</option>
+                  <option value="hope">Hope e comandos por voz</option>
+                  <option value="planning">Contas, cartões e planejamento</option>
+                  <option value="other">Outro assunto</option>
+                </select>
+              </div>
+              <div class="field-grid">
+                <div class="field">
+                  <label for="support-version">Versão do app</label>
+                  <input id="support-version" name="app_version" type="text" maxlength="40" placeholder="Ex.: 1.0.0">
+                </div>
+                <div class="field">
+                  <label for="support-platform">Dispositivo</label>
+                  <select id="support-platform" name="platform">
+                    <option value="">Selecione</option>
+                    <option value="ios">iPhone ou iPad</option>
+                    <option value="android">Android</option>
+                    <option value="web">Navegador Web</option>
+                  </select>
+                </div>
+              </div>
+              <div class="field">
+                <label for="support-message">Como podemos ajudar? *</label>
+                <textarea id="support-message" name="message" minlength="20" maxlength="4000" required aria-describedby="message-hint"></textarea>
+                <p class="field-hint" id="message-hint">Inclua os passos anteriores ao problema e a mensagem exibida, sem compartilhar dados financeiros sensíveis.</p>
+              </div>
+              <div class="honeypot" aria-hidden="true">
+                <label for="support-website">Site</label>
+                <input id="support-website" name="website" type="text" tabindex="-1" autocomplete="off">
+              </div>
+              <label class="consent-row">
+                <input type="checkbox" name="consent" required>
+                <span>Autorizo o uso destas informações para responder e acompanhar esta solicitação de suporte.</span>
+              </label>
+              <div class="form-actions">
+                <button class="button" id="support-submit" type="submit">Enviar solicitação</button>
+                <a class="nav-link" href="/">Voltar ao app</a>
+              </div>
+              <p class="form-status" id="support-status" role="status" aria-live="polite"></p>
+            </form>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <footer class="site-footer">
+      <div class="container footer-inner">
+        <span>© 2026 NewHope. HopeCash.</span>
+        <nav class="footer-links" aria-label="Links do rodapé">
+          <a href="/marketing/">Informações do app</a>
+          <a href="/">Acessar o HopeCash</a>
+        </nav>
+      </div>
+    </footer>
+    <script src="/public/site.js" defer></script>
+    <script src="/public/support.js" defer></script>
+  </body>
+</html>

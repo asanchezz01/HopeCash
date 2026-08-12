@@ -27,13 +27,20 @@ function getTransporter() {
  * Envia um e-mail. Retorna { sent } indicando se saiu de fato pela rede.
  * Nunca lança: uma falha de e-mail não deve derrubar a operação de negócio.
  */
-export async function sendMail({ to, subject, text, html }) {
+export async function sendMail({ to, subject, text, html, replyTo }) {
   if (!config.mail.enabled) {
     logger.info({ to, subject, text }, 'E-mail desabilitado (MAIL_ENABLED=false) — conteúdo apenas registrado');
     return { sent: false };
   }
   try {
-    await getTransporter().sendMail({ from: config.mail.from, to, subject, text, html });
+    await getTransporter().sendMail({
+      from: config.mail.from,
+      to,
+      subject,
+      text,
+      html,
+      replyTo,
+    });
     logger.info({ to, subject }, 'E-mail enviado');
     return { sent: true };
   } catch (err) {

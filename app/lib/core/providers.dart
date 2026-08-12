@@ -57,7 +57,23 @@ class ThemeModeController extends StateNotifier<ThemeMode> {
   }
 }
 
-final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
+final Provider<ApiClient> apiClientProvider = Provider<ApiClient>((ref) {
+  return ApiClient(
+    onSessionExpired: () {
+      // O interceptor pode concluir dentro da pilha de uma requisição. Adiar a
+      // mudança evita alterar providers enquanto outro provider está criando e
+      // mantém uma única saída consistente para login em toda a aplicação.
+      scheduleMicrotask(() {
+        ref.read(syncServiceProvider).stop();
+        ref.read(actingAccountProvider.notifier).state = null;
+        ref.read(pendingDeepLinkProvider.notifier).state = null;
+        ref.read(authStateProvider.notifier).state = null;
+        ref.read(appLockedProvider.notifier).state = false;
+        ref.invalidate(aiAvailableProvider);
+      });
+    },
+  );
+});
 
 final aiApiProvider = Provider<AiApi>(
   (ref) => AiApi(ref.watch(apiClientProvider)),
@@ -92,7 +108,7 @@ final financeRepositoryProvider = Provider<FinanceRepository>(
   (ref) => FinanceRepository(ref.watch(databaseProvider)),
 );
 
-final syncServiceProvider = Provider<SyncService>((ref) {
+final Provider<SyncService> syncServiceProvider = Provider<SyncService>((ref) {
   final service = SyncService(
     ref.watch(databaseProvider),
     ref.watch(apiClientProvider),

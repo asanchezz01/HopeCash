@@ -8,29 +8,35 @@ import '../../core/config/app_config.dart';
 /// Cliente HTTP com JWT automático e renovação transparente do access token.
 /// Tokens ficam no armazenamento seguro da plataforma (Keychain/Keystore).
 class ApiClient {
-  ApiClient({FlutterSecureStorage? storage, Dio? dio, Dio? refreshDio})
-    : _storage = storage ?? const FlutterSecureStorage(),
-      dio =
-          dio ??
-          Dio(
-            BaseOptions(
-              baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix,
-              headers: const {
-                'Cache-Control': 'no-cache',
-                'Pragma': 'no-cache',
-              },
-            ),
-          ),
-      _refreshDio =
-          refreshDio ??
-          Dio(
-            BaseOptions(baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix),
-          ) {
+  ApiClient({
+    FlutterSecureStorage? storage,
+    Dio? dio,
+    Dio? refreshDio,
+    this.onSessionExpired,
+  }) : _storage = storage ?? const FlutterSecureStorage(),
+       dio =
+           dio ??
+           Dio(
+             BaseOptions(
+               baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix,
+               headers: const {
+                 'Cache-Control': 'no-cache',
+                 'Pragma': 'no-cache',
+               },
+             ),
+           ),
+       _refreshDio =
+           refreshDio ??
+           Dio(
+             BaseOptions(baseUrl: AppConfig.apiBaseUrl + AppConfig.apiPrefix),
+           ) {
     this.dio.options.connectTimeout = const Duration(seconds: 10);
     this.dio.options.receiveTimeout = const Duration(seconds: 30);
     this.dio.interceptors.add(
       InterceptorsWrapper(
         onRequest: (options, handler) async {
+          final isAuthRoute = options.path.contains('/auth/');
+          if (!isAuthRoute) await ensureSessionFresh();
           final token = await _storage.read(key: _kAccess);
           if (token != null) options.headers['Authorization'] = 'Bearer $token';
           handler.next(options);
@@ -71,9 +77,11 @@ class ApiClient {
   static const _authRetryKey = 'hopecash_auth_retried';
 
   final FlutterSecureStorage _storage;
+  final void Function()? onSessionExpired;
   final Dio dio;
   final Dio _refreshDio;
   Future<bool>? _refreshInFlight;
+  bool _sessionExpiryNotified = false;
 
   Future<void> saveSession(Map<String, dynamic> data) async {
     await _storage.write(key: _kAccess, value: data['access_token'] as String);
@@ -81,6 +89,7 @@ class ApiClient {
       key: _kRefresh,
       value: data['refresh_token'] as String,
     );
+    _sessionExpiryNotified = false;
   }
 
   Future<void> saveUser(String userJson) =>
@@ -107,6 +116,17 @@ class ApiClient {
   /// Sai da conta delegada: volta a operar com o token da própria conta.
   Future<bool> resetToOwnAccount() async {
     await clearActing();
+    return _tryRefresh();
+  }
+
+  /// Garante que chamadas iniciadas após uma longa suspensão do app não usem
+  /// um access token vencido. A leitura de `exp` serve apenas para decidir se
+  /// é hora de renovar; a validação criptográfica continua sendo do backend.
+  Future<bool> ensureSessionFresh({
+    Duration minimumValidity = const Duration(minutes: 1),
+  }) async {
+    final access = await _storage.read(key: _kAccess);
+    if (!_expiresWithin(access, minimumValidity)) return true;
     return _tryRefresh();
   }
 
@@ -143,7 +163,10 @@ class ApiClient {
 
   Future<bool> _performRefresh() async {
     final refresh = await _storage.read(key: _kRefresh);
-    if (refresh == null) return false;
+    if (refresh == null) {
+      await _expireLocalSession();
+      return false;
+    }
     try {
       // Dio "limpo" para não entrar em loop no interceptor.
       final res = await _refreshDio.post(
@@ -173,10 +196,51 @@ class ApiClient {
         }
       }
       return true;
-    } catch (_) {
-      await _storage.delete(key: _kAccess);
-      await _storage.delete(key: _kRefresh);
+    } on DioException catch (error) {
+      // Rede indisponível, timeout e 5xx são transitórios: preservar o refresh
+      // token permite recuperar a sessão assim que o iPhone voltar à rede.
+      // Somente uma rejeição definitiva do endpoint encerra a sessão local.
+      final status = error.response?.statusCode;
+      if (status == 400 || status == 401 || status == 403) {
+        await _expireLocalSession();
+      }
       return false;
+    } catch (_) {
+      // Falhas locais de storage/parsing também podem ser transitórias. O
+      // backend ainda não confirmou que a sessão expirou, então não apagamos
+      // uma credencial potencialmente recuperável.
+      return false;
+    }
+  }
+
+  Future<void> _expireLocalSession() async {
+    await _storage.delete(key: _kAccess);
+    await _storage.delete(key: _kRefresh);
+    await _storage.delete(key: _kUser);
+    await _storage.delete(key: _kActing);
+    if (_sessionExpiryNotified) return;
+    _sessionExpiryNotified = true;
+    onSessionExpired?.call();
+  }
+
+  static bool _expiresWithin(String? token, Duration margin) {
+    if (token == null) return true;
+    try {
+      final parts = token.split('.');
+      if (parts.length != 3) return true;
+      final payload = jsonDecode(
+        utf8.decode(base64Url.decode(base64Url.normalize(parts[1]))),
+      );
+      if (payload is! Map<String, dynamic>) return true;
+      final exp = payload['exp'];
+      if (exp is! num) return true;
+      final expiresAt = DateTime.fromMillisecondsSinceEpoch(
+        exp.toInt() * 1000,
+        isUtc: true,
+      );
+      return !expiresAt.isAfter(DateTime.now().toUtc().add(margin));
+    } catch (_) {
+      return true;
     }
   }
 }

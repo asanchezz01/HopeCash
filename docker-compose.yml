@@ -47,6 +47,11 @@ services:
       MAIL_PASS: ${MAIL_PASS:-}
       MAIL_FROM: ${MAIL_FROM:-}
       MAIL_USE_TLS: ${MAIL_USE_TLS:-true}
+      # Formulário público de suporte
+      SUPPORT_EMAIL_TO: ${SUPPORT_EMAIL_TO:-}
+      SUPPORT_EMAIL_SUBJECT_PREFIX: ${SUPPORT_EMAIL_SUBJECT_PREFIX:-[HopeCash Suporte]}
+      SUPPORT_RATE_LIMIT_MAX: ${SUPPORT_RATE_LIMIT_MAX:-5}
+      SUPPORT_RATE_LIMIT_WINDOW_MINUTES: ${SUPPORT_RATE_LIMIT_WINDOW_MINUTES:-15}
       # Versao/build publicados — expostos em GET /api/v1/version.
       BUILD_REF: ${BUILD_REF:-local}
       BUILD_TIME: ${BUILD_TIME:-}

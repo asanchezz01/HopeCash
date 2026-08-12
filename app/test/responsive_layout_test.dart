@@ -58,16 +58,19 @@ void main() {
     await db.close();
   });
 
-  Widget wrap(Widget home, {Brightness brightness = Brightness.light}) =>
-      ProviderScope(
-        overrides: [databaseProvider.overrideWithValue(db)],
-        child: MaterialApp(
-          theme: brightness == Brightness.dark
-              ? AppTheme.dark()
-              : AppTheme.light(),
-          home: home,
-        ),
-      );
+  Widget wrap(
+    Widget home, {
+    Brightness brightness = Brightness.light,
+    TargetPlatform? platform,
+  }) => ProviderScope(
+    overrides: [databaseProvider.overrideWithValue(db)],
+    child: MaterialApp(
+      theme: brightness == Brightness.dark
+          ? AppTheme.dark(platform: platform)
+          : AppTheme.light(platform: platform),
+      home: home,
+    ),
+  );
 
   Future<void> seed() async {
     final repo = FinanceRepository(db);
@@ -159,6 +162,26 @@ void main() {
     'painel inicial': DashboardScreen.new,
     'lançamentos': TransactionsScreen.new,
     'tela Mais': MoreScreen.new,
+  }.entries) {
+    testWidgets('${screen.key} cabe na escala tipográfica do iPhone', (
+      tester,
+    ) async {
+      await seed();
+      await atSize(tester, const Size(390, 844), () async {
+        await tester.pumpWidget(
+          wrap(screen.value(), platform: TargetPlatform.iOS),
+        );
+        await pumpFrames(tester);
+        expect(tester.takeException(), isNull);
+      });
+      await disposeApp(tester);
+    });
+  }
+
+  for (final screen in <String, Widget Function()>{
+    'painel inicial': DashboardScreen.new,
+    'lançamentos': TransactionsScreen.new,
+    'tela Mais': MoreScreen.new,
     'orçamento': BudgetScreen.new,
     'metas': GoalsScreen.new,
     'dívidas': DebtsScreen.new,
@@ -224,7 +247,7 @@ void main() {
         ProviderScope(
           overrides: [databaseProvider.overrideWithValue(db)],
           child: MaterialApp(
-            theme: AppTheme.light(),
+            theme: AppTheme.light(platform: TargetPlatform.iOS),
             builder: (context, child) => MediaQuery.withClampedTextScaling(
               minScaleFactor: 1.3,
               maxScaleFactor: 1.3,

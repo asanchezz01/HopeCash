@@ -54,3 +54,22 @@ Lê as credenciais de `C:\app\hopecash_private\deploy_credencial.txt` (`SERVER`,
 ## Configuração persistente
 
 O `.env` do servidor guarda portas, URLs e segredos gerados no primeiro deploy (`MYSQL_PASSWORD`, `JWT_SECRET`…). Ele é reescrito a cada deploy **preservando os valores existentes**; para trocar um valor, edite o arquivo no servidor antes do próximo deploy ou passe a variável correspondente (`WEB_PORT`, `API_BASE_URL`, `CORS_ALLOWED_ORIGINS`…) ao `deploy.sh`. `RESET_DB=1` (ou `-ResetDatabase` no `deploy.bat`) apaga o volume do MySQL — não está exposto no workflow por segurança.
+
+## Páginas públicas para a App Store
+
+O mesmo domínio do app publica duas páginas sem exigir login:
+
+- URL de marketing: `https://hopecash.coagru.com.br/marketing/`
+- URL de suporte: `https://hopecash.coagru.com.br/suporte/`
+
+O formulário de suporte chama o endpoint público `POST /api/v1/support`. Para que ele envie mensagens reais, habilite o SMTP com as variáveis `MAIL_*` já usadas pelo backend e configure no `.env` persistente:
+
+```dotenv
+MAIL_ENABLED=true
+SUPPORT_EMAIL_TO=suporte@seudominio.com.br
+SUPPORT_EMAIL_SUBJECT_PREFIX=[HopeCash Suporte]
+SUPPORT_RATE_LIMIT_MAX=5
+SUPPORT_RATE_LIMIT_WINDOW_MINUTES=15
+```
+
+`SUPPORT_EMAIL_TO` é o destinatário dos chamados. O prefixo identifica as mensagens na caixa de entrada; os dois últimos valores limitam envios por IP e reduzem abuso. Se `SUPPORT_EMAIL_TO` estiver vazio, o backend usa `MAIL_FROM`, depois `MAIL_USER`, como alternativa.

@@ -66,8 +66,7 @@ void main() {
   }) => ProviderScope(
     overrides: [
       databaseProvider.overrideWithValue(db),
-      if (month != null)
-        selectedMonthProvider.overrideWith((ref) => month),
+      if (month != null) selectedMonthProvider.overrideWith((ref) => month),
     ],
     child: MaterialApp(
       theme: AppTheme.light(),
@@ -133,29 +132,15 @@ void main() {
     );
   }
 
-  testWidgets('modo Previsto mostra tudo; Extrato só o efetivado na conta', (
+  testWidgets('Extrato é padrão; Previsto mostra também o que falta realizar', (
     tester,
   ) async {
     await seedData();
     await tester.pumpWidget(buildApp());
     await pumpFrames(tester);
 
-    // Previsto (padrão): pagos e previstos do mês, com totais de projeção.
-    expect(find.text('Padaria'), findsOneWidget);
-    expect(find.text('Aluguel'), findsOneWidget);
-    expect(find.text('Notebook (1/3)'), findsOneWidget);
-    expect(find.text('Realizado'), findsOneWidget);
-    expect(find.text('A realizar'), findsOneWidget);
-    expect(find.text('Projeção do mês'), findsOneWidget);
-    // Os filtros de previstos só existem no modo Previsto.
-    await openFilters(tester);
-    expect(find.text('Receitas previstas'), findsOneWidget);
-    await closeFilters(tester);
-
-    // Extrato: somem os previstos e as compras de cartão; ficam as
-    // movimentações pagas da conta, incluindo o pagamento da fatura.
-    await tester.tap(find.text('Extrato'));
-    await pumpFrames(tester);
+    // Extrato (padrão): só movimentações efetivadas da conta, incluindo a
+    // liquidação da fatura.
     expect(find.text('Padaria'), findsOneWidget);
     expect(find.text('Pagamento fatura Cartão Hope'), findsOneWidget);
     expect(find.text('Aluguel'), findsNothing);
@@ -165,7 +150,57 @@ void main() {
     expect(find.text('Resultado'), findsOneWidget);
     await openFilters(tester);
     expect(find.text('Receitas previstas'), findsNothing);
+    expect(find.text('Pendentes'), findsNothing);
     await closeFilters(tester);
+
+    // Previsto reúne realizados e pendentes e expõe os filtros próprios.
+    await tester.tap(find.text('Previsto'));
+    await pumpFrames(tester);
+    expect(find.text('Padaria'), findsOneWidget);
+    expect(find.text('Aluguel'), findsOneWidget);
+    expect(find.text('Notebook (1/3)'), findsOneWidget);
+    expect(find.text('Realizado'), findsOneWidget);
+    expect(find.text('A realizar'), findsOneWidget);
+    expect(find.text('Projeção do mês'), findsOneWidget);
+    await openFilters(tester);
+    expect(find.text('Receitas previstas'), findsOneWidget);
+    expect(find.text('Pendentes'), findsOneWidget);
+    expect(find.text('Efetivados'), findsOneWidget);
+    await closeFilters(tester);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('Previsto filtra lançamentos pendentes e efetivados', (
+    tester,
+  ) async {
+    await seedData();
+    await tester.pumpWidget(buildApp());
+    await pumpFrames(tester);
+    await tester.tap(find.text('Previsto'));
+    await pumpFrames(tester);
+
+    await openFilters(tester);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Pendentes'));
+    await pumpFrames(tester);
+    await closeFilters(tester);
+
+    expect(find.text('Aluguel'), findsOneWidget);
+    expect(find.text('Notebook (1/3)'), findsOneWidget);
+    expect(find.text('Padaria'), findsNothing);
+    expect(find.text('Pagamento fatura Cartão Hope'), findsNothing);
+    expect(find.text('Pendentes'), findsOneWidget);
+
+    await openFilters(tester);
+    await tester.tap(find.widgetWithText(ChoiceChip, 'Efetivados'));
+    await pumpFrames(tester);
+    await closeFilters(tester);
+
+    expect(find.text('Padaria'), findsOneWidget);
+    expect(find.text('Pagamento fatura Cartão Hope'), findsOneWidget);
+    expect(find.text('Aluguel'), findsNothing);
+    expect(find.text('Notebook (1/3)'), findsNothing);
+    expect(find.text('Efetivados'), findsOneWidget);
 
     await disposeApp(tester);
   });
@@ -177,8 +212,6 @@ void main() {
     await tester.pumpWidget(buildApp());
     await pumpFrames(tester);
 
-    await tester.tap(find.text('Extrato'));
-    await pumpFrames(tester);
     await selectSource(tester, 'Cartão Hope');
 
     // Compras do cartão aparecem; a liquidação (débito na conta) não é uma
@@ -236,8 +269,6 @@ void main() {
     await tester.pumpWidget(buildApp(month: nextMonth));
     await pumpFrames(tester);
 
-    await tester.tap(find.text('Extrato'));
-    await pumpFrames(tester);
     await selectSource(tester, 'Cartão Hope');
 
     expect(find.text('Notebook (2/2)'), findsOneWidget);
@@ -281,9 +312,6 @@ void main() {
 
     await tester.pumpWidget(buildApp(month: DateTime(2026, 5)));
     await pumpFrames(tester);
-    await tester.tap(find.text('Extrato'));
-    await pumpFrames(tester);
-
     // Padrão: mais recentes primeiro.
     expect(
       tester.getTopLeft(find.text('20/05/2026')).dy,
@@ -301,6 +329,49 @@ void main() {
       tester.getTopLeft(find.text('05/05/2026')).dy,
       lessThan(tester.getTopLeft(find.text('20/05/2026')).dy),
     );
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('resumo mantém valores monetários em uma única linha', (
+    tester,
+  ) async {
+    tester.view.physicalSize = const Size(360, 800);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final repo = FinanceRepository(db);
+    await repo.upsertAccount(
+      id: 'acc-1',
+      name: 'Conta Hope',
+      type: 'checking',
+      initialBalance: 0,
+    );
+    await repo.addTransaction(
+      type: 'income',
+      description: 'Receita de cinco dígitos',
+      amount: 12345.67,
+      date: todayIso(),
+      isPaid: true,
+      accountId: 'acc-1',
+    );
+
+    await tester.pumpWidget(buildApp());
+    await pumpFrames(tester);
+
+    expect(tester.takeException(), isNull);
+    final summaryCard = find
+        .ancestor(of: find.text('Entradas'), matching: find.byType(Card))
+        .first;
+    final moneyTexts = tester
+        .widgetList<Text>(
+          find.descendant(of: summaryCard, matching: find.byType(Text)),
+        )
+        .where((text) => text.data?.contains(r'R$') ?? false);
+    expect(moneyTexts, isNotEmpty);
+    for (final text in moneyTexts) {
+      expect(text.maxLines, 1);
+      expect(text.softWrap, isFalse);
+    }
 
     await disposeApp(tester);
   });

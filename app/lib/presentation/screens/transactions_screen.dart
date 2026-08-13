@@ -26,10 +26,23 @@ final _filterProvider = StateProvider<String>((ref) => 'all');
 /// com seus valores orçados.
 enum _ViewMode { statement, planned }
 
-final _viewModeProvider = StateProvider<_ViewMode>((ref) => _ViewMode.planned);
+final _viewModeProvider = StateProvider<_ViewMode>(
+  (ref) => _ViewMode.statement,
+);
 
-/// Ordenação do extrato: true = mais recentes primeiro (padrão).
-final _statementSortDescProvider = StateProvider<bool>((ref) => true);
+/// Ordenação das listas: true = mais recentes primeiro (padrão).
+final _sortDescendingProvider = StateProvider<bool>((ref) => true);
+
+/// Situação financeira do lançamento no modo Previsto.
+///
+/// Nas linhas consolidadas, pendente significa saldo a realizar positivo;
+/// efetivado significa saldo zerado ou ultrapassado. Nas transações avulsas,
+/// o status pago representa a mesma conclusão.
+enum _SettlementFilter { all, pending, settled }
+
+final _settlementFilterProvider = StateProvider<_SettlementFilter>(
+  (ref) => _SettlementFilter.all,
+);
 
 /// Origem de um filtro: conta ou cartão de crédito.
 enum _SourceKind { account, card }
@@ -136,8 +149,9 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
   Widget build(BuildContext context) {
     final mode = ref.watch(_viewModeProvider);
     final statement = mode == _ViewMode.statement;
-    final sortDesc = ref.watch(_statementSortDescProvider);
+    final sortDesc = ref.watch(_sortDescendingProvider);
     final filter = ref.watch(_filterProvider);
+    final settlementFilter = ref.watch(_settlementFilterProvider);
     final accountFilter = ref.watch(_accountFilterProvider);
     final search = ref.watch(_searchProvider).trim().toLowerCase();
     final month = ref.watch(selectedMonthProvider);
@@ -180,6 +194,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   t,
                   monthKey: monthKey,
                   filter: filter,
+                  settlementFilter: settlementFilter,
                   accountFilter: accountFilter,
                   search: search,
                   categoryNames: categories,
@@ -190,7 +205,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
               .toList()
             ..sort((a, b) {
               final cmp = sortDate(a).compareTo(sortDate(b));
-              return statement && sortDesc ? -cmp : cmp;
+              return sortDesc ? -cmp : cmp;
             });
 
       final messenger = ScaffoldMessenger.of(context);
@@ -238,6 +253,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                   t,
                   monthKey: monthKey,
                   filter: filter,
+                  settlementFilter: settlementFilter,
                   accountFilter: accountFilter,
                   search: search,
                   categoryNames: categories,
@@ -248,7 +264,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
               .toList()
             ..sort((a, b) {
               final cmp = sortDate(a).compareTo(sortDate(b));
-              return statement && sortDesc ? -cmp : cmp;
+              return sortDesc ? -cmp : cmp;
             });
       if (rows.isEmpty) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -302,6 +318,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
           _TransactionsToolbar(
             mode: mode,
             filter: filter,
+            settlementFilter: settlementFilter,
             accountFilter: accountFilter,
             sortDesc: sortDesc,
             accounts: accounts,
@@ -314,6 +331,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                 ? _PlannedList(
                     monthKey: monthKey,
                     incomeView: filter == 'planned_income',
+                    settlementFilter: settlementFilter,
+                    sortDesc: sortDesc,
                     accountFilter: accountFilter,
                     search: search,
                     categoryNames: categories,
@@ -337,6 +356,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                               t,
                               monthKey: monthKey,
                               filter: filter,
+                              settlementFilter: settlementFilter,
                               accountFilter: accountFilter,
                               search: search,
                               categoryNames: categories,
@@ -349,6 +369,8 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       if (txs.isEmpty) {
                         final filtering =
                             filter != 'all' ||
+                            (!statement &&
+                                settlementFilter != _SettlementFilter.all) ||
                             accountFilter != null ||
                             search.isNotEmpty;
                         // Sem filtros ativos, mas há lançamentos em outros
@@ -386,9 +408,7 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                       }
                       final dates = groups.keys.toList()
                         ..sort(
-                          (a, b) => statement && !sortDesc
-                              ? a.compareTo(b)
-                              : b.compareTo(a),
+                          (a, b) => sortDesc ? b.compareTo(a) : a.compareTo(b),
                         );
 
                       return ListView.builder(
@@ -401,7 +421,9 @@ class _TransactionsScreenState extends ConsumerState<TransactionsScreen> {
                                 : _MixedTotals(txs: txs);
                           }
                           final date = dates[index - 1];
-                          final items = groups[date]!;
+                          final items = sortDesc
+                              ? groups[date]!
+                              : groups[date]!.reversed;
                           return Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
@@ -463,6 +485,7 @@ class _TransactionsToolbar extends ConsumerWidget {
   const _TransactionsToolbar({
     required this.mode,
     required this.filter,
+    required this.settlementFilter,
     required this.accountFilter,
     required this.sortDesc,
     required this.accounts,
@@ -471,6 +494,7 @@ class _TransactionsToolbar extends ConsumerWidget {
 
   final _ViewMode mode;
   final String filter;
+  final _SettlementFilter settlementFilter;
   final _SourceFilter? accountFilter;
   final bool sortDesc;
   final List<LocalAccount> accounts;
@@ -479,7 +503,10 @@ class _TransactionsToolbar extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final statement = mode == _ViewMode.statement;
-    final activeCount = (filter == 'all' ? 0 : 1) + (accountFilter == null ? 0 : 1);
+    final activeCount =
+        (filter == 'all' ? 0 : 1) +
+        (accountFilter == null ? 0 : 1) +
+        (!statement && settlementFilter != _SettlementFilter.all ? 1 : 0);
     final padding = context.pagePadding;
 
     final modeSelector = SegmentedButton<_ViewMode>(
@@ -504,11 +531,20 @@ class _TransactionsToolbar extends ConsumerWidget {
         if (next == _ViewMode.statement && filter.startsWith('planned_')) {
           ref.read(_filterProvider.notifier).state = 'all';
         }
+        if (next == _ViewMode.statement) {
+          ref.read(_settlementFilterProvider.notifier).state =
+              _SettlementFilter.all;
+        }
       },
     );
 
     return Padding(
-      padding: EdgeInsets.fromLTRB(padding, HopeSpacing.xxs, padding, HopeSpacing.xs),
+      padding: EdgeInsets.fromLTRB(
+        padding,
+        HopeSpacing.xxs,
+        padding,
+        HopeSpacing.xs,
+      ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
@@ -550,7 +586,7 @@ class _TransactionsToolbar extends ConsumerWidget {
               );
             },
           ),
-          if (activeCount > 0 || (statement && !sortDesc))
+          if (activeCount > 0 || !sortDesc)
             Padding(
               padding: const EdgeInsets.only(top: HopeSpacing.xs),
               child: Wrap(
@@ -567,14 +603,22 @@ class _TransactionsToolbar extends ConsumerWidget {
                     _ActiveFilterChip(
                       label: _sourceLabel(accountFilter!, accounts, cards),
                       onClear: () =>
-                          ref.read(_accountFilterProvider.notifier).state = null,
+                          ref.read(_accountFilterProvider.notifier).state =
+                              null,
                     ),
-                  if (statement && !sortDesc)
+                  if (!statement && settlementFilter != _SettlementFilter.all)
+                    _ActiveFilterChip(
+                      label: _settlementFilterLabel(settlementFilter),
+                      onClear: () =>
+                          ref.read(_settlementFilterProvider.notifier).state =
+                              _SettlementFilter.all,
+                    ),
+                  if (!sortDesc)
                     _ActiveFilterChip(
                       label: 'Mais antigas primeiro',
-                      onClear: () => ref
-                          .read(_statementSortDescProvider.notifier)
-                          .state = true,
+                      onClear: () =>
+                          ref.read(_sortDescendingProvider.notifier).state =
+                              true,
                     ),
                 ],
               ),
@@ -591,6 +635,12 @@ String _filterLabel(String filter) => switch (filter) {
   'planned_income' => 'Receitas previstas',
   'planned_expense' => 'Despesas previstas',
   _ => 'Todos',
+};
+
+String _settlementFilterLabel(_SettlementFilter filter) => switch (filter) {
+  _SettlementFilter.pending => 'Pendentes',
+  _SettlementFilter.settled => 'Efetivados',
+  _SettlementFilter.all => 'Todas as situações',
 };
 
 String _sourceLabel(
@@ -680,9 +730,13 @@ Future<void> _showFiltersSheet(
     builder: (sheetContext) => Consumer(
       builder: (context, ref, _) {
         final filter = ref.watch(_filterProvider);
+        final settlementFilter = ref.watch(_settlementFilterProvider);
         final accountFilter = ref.watch(_accountFilterProvider);
-        final sortDesc = ref.watch(_statementSortDescProvider);
-        final hasAny = filter != 'all' || accountFilter != null;
+        final sortDesc = ref.watch(_sortDescendingProvider);
+        final hasAny =
+            filter != 'all' ||
+            accountFilter != null ||
+            (!statement && settlementFilter != _SettlementFilter.all);
 
         return SafeArea(
           top: false,
@@ -709,7 +763,10 @@ Future<void> _showFiltersSheet(
                       TextButton(
                         onPressed: () {
                           ref.read(_filterProvider.notifier).state = 'all';
-                          ref.read(_accountFilterProvider.notifier).state = null;
+                          ref.read(_accountFilterProvider.notifier).state =
+                              null;
+                          ref.read(_settlementFilterProvider.notifier).state =
+                              _SettlementFilter.all;
                         },
                         child: const Text('Limpar'),
                       ),
@@ -737,6 +794,34 @@ Future<void> _showFiltersSheet(
                       ),
                   ],
                 ),
+                if (!statement) ...[
+                  const SizedBox(height: HopeSpacing.lg),
+                  Text(
+                    'Situação',
+                    style: Theme.of(context).textTheme.titleSmall,
+                  ),
+                  const SizedBox(height: HopeSpacing.xs),
+                  Wrap(
+                    spacing: HopeSpacing.xs,
+                    runSpacing: HopeSpacing.xs,
+                    children: [
+                      for (final (value, label) in [
+                        (_SettlementFilter.all, 'Todos'),
+                        (_SettlementFilter.pending, 'Pendentes'),
+                        (_SettlementFilter.settled, 'Efetivados'),
+                      ])
+                        ChoiceChip(
+                          label: Text(label),
+                          selected: settlementFilter == value,
+                          onSelected: (_) =>
+                              ref
+                                      .read(_settlementFilterProvider.notifier)
+                                      .state =
+                                  value,
+                        ),
+                    ],
+                  ),
+                ],
                 if (accounts.isNotEmpty || cards.isNotEmpty) ...[
                   const SizedBox(height: HopeSpacing.lg),
                   Text('Origem', style: Theme.of(context).textTheme.titleSmall),
@@ -752,9 +837,9 @@ Future<void> _showFiltersSheet(
                         ),
                         label: const Text('Todas'),
                         selected: accountFilter == null,
-                        onSelected: (_) => ref
-                            .read(_accountFilterProvider.notifier)
-                            .state = null,
+                        onSelected: (_) =>
+                            ref.read(_accountFilterProvider.notifier).state =
+                                null,
                       ),
                       for (final a in accounts)
                         ChoiceChip(
@@ -777,7 +862,10 @@ Future<void> _showFiltersSheet(
                         ),
                       for (final c in cards)
                         ChoiceChip(
-                          avatar: const Icon(Icons.credit_card_outlined, size: 18),
+                          avatar: const Icon(
+                            Icons.credit_card_outlined,
+                            size: 18,
+                          ),
                           label: Text(c.name),
                           selected:
                               accountFilter ==
@@ -794,31 +882,23 @@ Future<void> _showFiltersSheet(
                     ],
                   ),
                 ],
-                if (statement) ...[
-                  const SizedBox(height: HopeSpacing.lg),
-                  Text(
-                    'Ordenação',
-                    style: Theme.of(context).textTheme.titleSmall,
-                  ),
-                  const SizedBox(height: HopeSpacing.xs),
-                  SegmentedButton<bool>(
-                    segments: const [
-                      ButtonSegment(
-                        value: true,
-                        label: Text('Mais recentes'),
-                      ),
-                      ButtonSegment(
-                        value: false,
-                        label: Text('Mais antigas'),
-                      ),
-                    ],
-                    selected: {sortDesc},
-                    showSelectedIcon: false,
-                    onSelectionChanged: (selection) => ref
-                        .read(_statementSortDescProvider.notifier)
-                        .state = selection.first,
-                  ),
-                ],
+                const SizedBox(height: HopeSpacing.lg),
+                Text(
+                  'Ordenação',
+                  style: Theme.of(context).textTheme.titleSmall,
+                ),
+                const SizedBox(height: HopeSpacing.xs),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(value: true, label: Text('Mais recentes')),
+                    ButtonSegment(value: false, label: Text('Mais antigas')),
+                  ],
+                  selected: {sortDesc},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (selection) =>
+                      ref.read(_sortDescendingProvider.notifier).state =
+                          selection.first,
+                ),
                 const SizedBox(height: HopeSpacing.lg),
                 FilledButton(
                   onPressed: () => Navigator.pop(sheetContext),
@@ -906,7 +986,11 @@ class _TransactionTile extends ConsumerWidget {
       await ref.read(financeRepositoryProvider).deleteTransaction(tx);
       ref.read(syncServiceProvider).syncNow();
       if (context.mounted) {
-        showHopeSnack(context, 'Lançamento excluído', tone: HopeSnackTone.danger);
+        showHopeSnack(
+          context,
+          'Lançamento excluído',
+          tone: HopeSnackTone.danger,
+        );
       }
     }
 
@@ -1213,7 +1297,9 @@ void showTransactionActions(
                 if (context.mounted) {
                   showHopeSnack(
                     context,
-                    isIncome ? 'Recebimento confirmado' : 'Pagamento confirmado',
+                    isIncome
+                        ? 'Recebimento confirmado'
+                        : 'Pagamento confirmado',
                     tone: HopeSnackTone.success,
                   );
                 }
@@ -1436,7 +1522,9 @@ class _StatementTotals extends StatelessWidget {
                       _MetricColumn(
                         label: 'Resultado',
                         value: net,
-                        color: net < -0.005 ? context.hopeColors.expense : context.hopeColors.income,
+                        color: net < -0.005
+                            ? context.hopeColors.expense
+                            : context.hopeColors.income,
                         align: CrossAxisAlignment.end,
                       ),
                     ],
@@ -1494,7 +1582,9 @@ class _MixedTotals extends StatelessWidget {
                 _MetricColumn(
                   label: 'Realizado',
                   value: realized,
-                  color: realized < -0.005 ? context.hopeColors.expense : context.hopeColors.income,
+                  color: realized < -0.005
+                      ? context.hopeColors.expense
+                      : context.hopeColors.income,
                   align: CrossAxisAlignment.start,
                 ),
                 _MetricColumn(
@@ -1505,7 +1595,9 @@ class _MixedTotals extends StatelessWidget {
                 _MetricColumn(
                   label: 'Projeção do mês',
                   value: projected,
-                  color: projected < -0.005 ? context.hopeColors.expense : context.hopeColors.income,
+                  color: projected < -0.005
+                      ? context.hopeColors.expense
+                      : context.hopeColors.income,
                   align: CrossAxisAlignment.end,
                 ),
               ],
@@ -1553,6 +1645,7 @@ bool _txMatches(
   LocalTransaction t, {
   required String monthKey,
   required String filter,
+  required _SettlementFilter settlementFilter,
   required _SourceFilter? accountFilter,
   required String search,
   required Map<String, String> categoryNames,
@@ -1587,6 +1680,13 @@ bool _txMatches(
       };
       if (!matchesSource) return false;
     }
+    final matchesSettlement = switch (settlementFilter) {
+      _SettlementFilter.all => true,
+      _SettlementFilter.pending =>
+        t.status == 'planned' || t.status == 'overdue',
+      _SettlementFilter.settled => t.status == 'paid',
+    };
+    if (!matchesSettlement) return false;
   }
   final matchesType = switch (filter) {
     'income' || 'planned_income' => t.type == 'income',
@@ -1613,6 +1713,8 @@ class _PlannedList extends ConsumerWidget {
   const _PlannedList({
     required this.monthKey,
     required this.incomeView,
+    required this.settlementFilter,
+    required this.sortDesc,
     required this.accountFilter,
     required this.search,
     required this.categoryNames,
@@ -1623,6 +1725,8 @@ class _PlannedList extends ConsumerWidget {
 
   final String monthKey;
   final bool incomeView;
+  final _SettlementFilter settlementFilter;
+  final bool sortDesc;
   final _SourceFilter? accountFilter;
   final String search;
   final Map<String, String> categoryNames;
@@ -1644,6 +1748,12 @@ class _PlannedList extends ConsumerWidget {
         final type = incomeView ? 'income' : 'expense';
         final entries = all.where((e) {
           if (e.type != type) return false;
+          final matchesSettlement = switch (settlementFilter) {
+            _SettlementFilter.all => true,
+            _SettlementFilter.pending => e.saldo > 0.005,
+            _SettlementFilter.settled => e.saldo <= 0.005,
+          };
+          if (!matchesSettlement) return false;
           if (accountFilter != null) {
             final matches = switch (accountFilter!.kind) {
               _SourceKind.account => e.accountId == accountFilter!.id,
@@ -1667,22 +1777,37 @@ class _PlannedList extends ConsumerWidget {
         if (entries.isEmpty) {
           return _EmptyPlaceholder(
             icon: Icons.event_note_outlined,
-            title: incomeView
-                ? 'Nenhuma receita prevista'
-                : 'Nenhuma despesa prevista',
-            subtitle:
-                'Lance itens no orçamento do mês ou agende lançamentos com vencimento.',
+            title: switch (settlementFilter) {
+              _SettlementFilter.pending => 'Nenhum lançamento pendente',
+              _SettlementFilter.settled => 'Nenhum lançamento efetivado',
+              _SettlementFilter.all =>
+                incomeView
+                    ? 'Nenhuma receita prevista'
+                    : 'Nenhuma despesa prevista',
+            },
+            subtitle: settlementFilter == _SettlementFilter.all
+                ? 'Lance itens no orçamento do mês ou agende lançamentos com vencimento.'
+                : 'Altere a situação ou ajuste os demais filtros.',
           );
         }
 
         // Orçamentos primeiro; depois dívidas; por fim, avulsos por vencimento.
         final budget = entries.where((e) => e.isBudget).toList()
-          ..sort((a, b) => a.description.compareTo(b.description));
+          ..sort((a, b) {
+            final cmp = a.description.compareTo(b.description);
+            return sortDesc ? -cmp : cmp;
+          });
         final debts = entries.where((e) => e.isDebt).toList()
-          ..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
+          ..sort((a, b) {
+            final cmp = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+            return sortDesc ? -cmp : cmp;
+          });
         final standalone =
             entries.where((e) => !e.isBudget && !e.isDebt).toList()
-              ..sort((a, b) => (a.dueDate ?? '').compareTo(b.dueDate ?? ''));
+              ..sort((a, b) {
+                final cmp = (a.dueDate ?? '').compareTo(b.dueDate ?? '');
+                return sortDesc ? -cmp : cmp;
+              });
 
         String subtitleFor(PlannedEntry e) {
           if (e.isBudget) {
@@ -1811,7 +1936,9 @@ class _PlannedTotals extends StatelessWidget {
                 _MetricColumn(
                   label: 'Realizado',
                   value: realizado,
-                  color: incomeView ? context.hopeColors.income : context.hopeColors.expense,
+                  color: incomeView
+                      ? context.hopeColors.income
+                      : context.hopeColors.expense,
                   align: CrossAxisAlignment.center,
                 ),
                 _MetricColumn(
@@ -1852,7 +1979,9 @@ class _PlannedEntryTile extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isIncome = entry.type == 'income';
-    final color = isIncome ? context.hopeColors.income : context.hopeColors.expense;
+    final color = isIncome
+        ? context.hopeColors.income
+        : context.hopeColors.expense;
     final tx = entry.transaction;
     final VoidCallback? onTap = entry.isDebt
         ? () {
@@ -1949,7 +2078,9 @@ class _PlannedEntryTile extends ConsumerWidget {
                     backgroundColor: Theme.of(
                       context,
                     ).colorScheme.surfaceContainerHighest,
-                    color: entry.saldo < -0.005 ? context.hopeColors.expense : color,
+                    color: entry.saldo < -0.005
+                        ? context.hopeColors.expense
+                        : color,
                   ),
                 ),
               ],
@@ -2000,6 +2131,11 @@ class _MetricColumn extends StatelessWidget {
       CrossAxisAlignment.center => TextAlign.center,
       _ => TextAlign.left,
     };
+    final fittedAlignment = switch (align) {
+      CrossAxisAlignment.end => Alignment.centerRight,
+      CrossAxisAlignment.center => Alignment.center,
+      _ => Alignment.centerLeft,
+    };
     return Expanded(
       child: Column(
         crossAxisAlignment: align,
@@ -2012,12 +2148,22 @@ class _MetricColumn extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 2),
-          Text(
-            formatMoney(value),
-            textAlign: textAlign,
-            style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-              fontWeight: FontWeight.w700,
-              color: color,
+          SizedBox(
+            width: double.infinity,
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: fittedAlignment,
+              child: Text(
+                formatMoney(value),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: textAlign,
+                style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+                  fontWeight: FontWeight.w700,
+                  color: color,
+                  fontFeatures: HopeNumerals.features,
+                ),
+              ),
             ),
           ),
         ],

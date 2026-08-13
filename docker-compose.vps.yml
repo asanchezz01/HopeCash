@@ -16,6 +16,19 @@ services:
     networks:
       - proxy
 
+  portainer:
+    image: portainer/portainer-ce:2.39.6-alpine
+    container_name: hopecash-portainer
+    restart: unless-stopped
+    command: -H unix:///var/run/docker.sock
+    security_opt:
+      - no-new-privileges:true
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - hopecash_portainer_data:/data
+    networks:
+      - proxy
+
   mysql:
     restart: unless-stopped
 
@@ -31,3 +44,4 @@ services:
 volumes:
   hopecash_npm_data:
   hopecash_npm_letsencrypt:
+  hopecash_portainer_data:

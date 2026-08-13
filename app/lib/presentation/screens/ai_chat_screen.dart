@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
@@ -9,6 +10,7 @@ import 'package:speech_to_text/speech_recognition_result.dart';
 import 'package:speech_to_text/speech_to_text.dart';
 
 import '../../core/providers.dart';
+import '../../core/audio/hope_audio_source.dart';
 import '../../core/utils/money.dart';
 import '../../data/remote/ai_api.dart';
 import '../../data/repositories/finance_repository.dart';
@@ -62,6 +64,8 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
   final _scroll = ScrollController();
   final _speech = SpeechToText();
   final _audioPlayer = AudioPlayer();
+  HopeAudioSource? _hopeAudioSource;
+  bool _audioSessionConfigured = false;
   String? _conversationId;
   bool _sending = false;
   bool _listening = false;
@@ -74,6 +78,9 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
     _scroll.dispose();
     _speech.cancel();
     _audioPlayer.dispose();
+    final audioSource = _hopeAudioSource;
+    _hopeAudioSource = null;
+    unawaited(audioSource?.dispose());
     super.dispose();
   }
 
@@ -173,6 +180,7 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
       return;
     }
 
+    HopeAudioSource? preparedSource;
     try {
       if (msg.audio == null) {
         setState(() => msg.audioLoading = true);
@@ -182,22 +190,48 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
         if (msg.audio!.isEmpty) throw StateError('Áudio vazio');
       }
       await _audioPlayer.stop();
+      final previousSource = _hopeAudioSource;
+      _hopeAudioSource = null;
+      await previousSource?.dispose();
       if (_playingMessage != null && mounted) {
         setState(() => _playingMessage!.audioPlaying = false);
       }
       _playingMessage = msg;
-      final uri = Uri.dataFromBytes(msg.audio!, mimeType: msg.audioContentType);
-      await _audioPlayer.setAudioSource(AudioSource.uri(uri));
+      if (!_audioSessionConfigured) {
+        final session = await AudioSession.instance;
+        await session.configure(const AudioSessionConfiguration.speech());
+        _audioSessionConfigured = true;
+      }
+      preparedSource = await HopeAudioSource.fromBytes(
+        msg.audio!,
+        msg.audioContentType,
+      );
+      _hopeAudioSource = preparedSource;
+      await _audioPlayer.setAudioSource(preparedSource.source);
       if (!mounted) return;
       setState(() {
         msg.audioLoading = false;
         msg.audioPlaying = true;
       });
       await _audioPlayer.play();
+      await _releaseAudioSource(preparedSource);
       if (mounted && identical(_playingMessage, msg)) {
         setState(() => msg.audioPlaying = false);
       }
-    } catch (_) {
+    } on PlayerException catch (error, stackTrace) {
+      debugPrint('Falha do player da voz da Hope: $error\n$stackTrace');
+      if (preparedSource != null) await _releaseAudioSource(preparedSource);
+      if (!mounted) return;
+      setState(() {
+        msg.audioLoading = false;
+        msg.audioPlaying = false;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('A voz da Hope está indisponível agora.')),
+      );
+    } catch (error, stackTrace) {
+      debugPrint('Falha ao reproduzir a voz da Hope: $error\n$stackTrace');
+      if (preparedSource != null) await _releaseAudioSource(preparedSource);
       if (!mounted) return;
       setState(() {
         msg.audioLoading = false;
@@ -211,11 +245,19 @@ class _AiChatScreenState extends ConsumerState<AiChatScreen> {
 
   Future<void> _stopAudio() async {
     await _audioPlayer.stop();
+    final audioSource = _hopeAudioSource;
+    _hopeAudioSource = null;
+    await audioSource?.dispose();
     if (!mounted) return;
     setState(() {
       if (_playingMessage != null) _playingMessage!.audioPlaying = false;
       _playingMessage = null;
     });
+  }
+
+  Future<void> _releaseAudioSource(HopeAudioSource source) async {
+    await source.dispose();
+    if (identical(_hopeAudioSource, source)) _hopeAudioSource = null;
   }
 
   void _openTransaction(String transactionId) {

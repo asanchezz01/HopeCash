@@ -49,9 +49,10 @@ O rollback de imagens não desfaz automaticamente migrations SQL. O dump
 pré-deploy é a proteção para uma restauração deliberada do banco.
 
 O script sempre combina `docker-compose.yml` com `docker-compose.vps.yml`. Isso
-mantém o Nginx Proxy Manager no projeto Compose e impede que ele seja removido como
-órfão. Mesmo no modo `RESET_DB=1`, somente o volume MySQL é removido; certificados
-e configurações do proxy não são apagados.
+mantém o Nginx Proxy Manager e o Portainer no projeto Compose e impede que sejam
+removidos como órfãos. Mesmo no modo `RESET_DB=1`, somente o volume MySQL é
+removido; certificados, configurações do proxy e dados do Portainer não são
+apagados.
 
 ## Estado persistente
 
@@ -79,4 +80,5 @@ portanto usa os mesmos backups, Compose do VPS e healthchecks.
 - App: `https://app.hopecash.tech`
 - API: `https://api.hopecash.tech`
 - Administração: `https://adm.hopecash.tech`
+- Portainer: `https://adm2.hopecash.tech`
 - Proxy: `https://proxy.hopecash.tech`

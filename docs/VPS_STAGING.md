@@ -9,6 +9,7 @@ retaguarda em portas locais e publica apenas o Nginx Proxy Manager em 80/443.
 | `app.hopecash.tech` | `web:80` |
 | `api.hopecash.tech` | `api:3000` |
 | `adm.hopecash.tech` | `retaguarda:80` |
+| `adm2.hopecash.tech` | `portainer:9443` (HTTPS interno) |
 
 O painel do Nginx Proxy Manager escuta somente em `127.0.0.1:81`. Para
 administrá-lo, abra um túnel e acesse `http://127.0.0.1:8181`:
@@ -19,6 +20,12 @@ ssh -L 8181:127.0.0.1:81 root@179.198.127.58
 
 As credenciais iniciais ficam no VPS, com permissão somente para root, em
 `/root/.config/hopecash/npm-admin.env`.
+
+O Portainer não publica portas diretamente no host. O acesso externo ocorre
+somente pelo Nginx Proxy Manager em `https://adm2.hopecash.tech`, e seus dados
+persistem no volume Docker `hopecash_hopecash_portainer_data`. O acesso ao
+socket Docker concede ao Portainer controle administrativo sobre os containers
+do VPS; por isso, proteja a conta administrativa com uma senha exclusiva.
 
 ## Operação do staging
 

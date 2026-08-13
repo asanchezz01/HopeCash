@@ -391,7 +391,7 @@ echo "Construindo novas imagens (aplicacao atual segue no ar durante o build)...
 
 # Garante infraestrutura no ar sem forcar recriacao. Se já estiver com a mesma
 # configuração, esses comandos são no-op.
-"${COMPOSE[@]}" up -d --no-deps mysql proxy-manager
+"${COMPOSE[@]}" up -d --no-deps mysql proxy-manager portainer
 
 # So troca os containers da aplicacao depois que a imagem nova ja existe: o
 # 'stop antigo + start novo' acontece por servico, minimizando o tempo fora do

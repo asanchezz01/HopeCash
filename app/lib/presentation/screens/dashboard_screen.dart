@@ -57,7 +57,7 @@ class DashboardScreen extends ConsumerWidget {
     final valuesHidden = ref.watch(_dashboardValuesHiddenProvider);
     final primaryGoal = _primaryGoal(goals);
 
-    final hopeAvailable = ref.watch(aiAvailableProvider).valueOrNull ?? false;
+    final hopeUnavailable = ref.watch(aiAvailableProvider).valueOrNull == false;
     final firstName = user?.name.split(' ').first ?? '';
 
     return Scaffold(
@@ -77,11 +77,18 @@ class DashboardScreen extends ConsumerWidget {
         ),
         actions: [
           // Hope perdeu o lugar na barra inferior (que agora só tem destinos);
-          // no celular ela vive aqui e na tela Mais.
-          if (hopeAvailable && context.isCompact)
+          // no celular ela vive aqui e na tela Mais. Uma falha transitória no
+          // health-check muda o estado do atalho, mas nunca o remove.
+          if (context.isCompact)
             IconButton(
-              tooltip: 'Conversar com a Hope',
-              icon: const Icon(Icons.auto_awesome_outlined),
+              key: const ValueKey('dashboard-hope-action'),
+              tooltip: hopeUnavailable
+                  ? 'Hope temporariamente indisponível — toque para tentar'
+                  : 'Conversar com a Hope',
+              icon: Icon(
+                Icons.auto_awesome_outlined,
+                color: hopeUnavailable ? context.hopeColors.warning : null,
+              ),
               onPressed: () => context.push('/ai-chat'),
             ),
           IconButton(

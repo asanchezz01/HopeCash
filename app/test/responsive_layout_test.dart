@@ -240,6 +240,41 @@ void main() {
     await disposeApp(tester);
   });
 
+  testWidgets(
+    'mantém o atalho da Hope no celular quando o health-check falha',
+    (tester) async {
+      await seed();
+      await atSize(tester, const Size(390, 844), () async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              databaseProvider.overrideWithValue(db),
+              aiAvailableProvider.overrideWith((ref) async => false),
+            ],
+            child: MaterialApp(
+              theme: AppTheme.light(),
+              home: const DashboardScreen(),
+            ),
+          ),
+        );
+        await pumpFrames(tester);
+
+        expect(
+          find.byKey(const ValueKey('dashboard-hope-action')),
+          findsOneWidget,
+        );
+        expect(
+          find.byTooltip(
+            'Hope temporariamente indisponível — toque para tentar',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+      await disposeApp(tester);
+    },
+  );
+
   testWidgets('rateio mostra o que falta distribuir e valida o fechamento', (
     tester,
   ) async {

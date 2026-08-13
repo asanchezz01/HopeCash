@@ -44,4 +44,4 @@ perfis de provisionamento para o Git.
    em **Instalar** no HopeCash.
 
 O workflow sempre compila com
-`https://hopecash-api.coagru.com.br` como `API_BASE_URL`.
+`https://api.hopecash.tech` como `API_BASE_URL`.

@@ -6,6 +6,12 @@ const apiBase = configuredApiBase.startsWith('__')
 const form = document.querySelector('#support-form');
 const submitButton = document.querySelector('#support-submit');
 const statusRegion = document.querySelector('#support-status');
+const categoryField = document.querySelector('#support-category');
+const requestedCategory = new URLSearchParams(window.location.search).get('assunto');
+
+if (requestedCategory === 'privacy' && categoryField) {
+  categoryField.value = requestedCategory;
+}
 
 function setStatus(message, type = '') {
   statusRegion.textContent = message;

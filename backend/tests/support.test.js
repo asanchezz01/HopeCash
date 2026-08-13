@@ -55,6 +55,21 @@ describe('Suporte público', () => {
     expect(sent).toHaveLength(0);
   });
 
+  it('recebe solicitações de privacidade e direitos do titular', async () => {
+    const response = await api.post('/api/v1/support').send({
+      name: 'Carlos Titular',
+      email: 'carlos@example.com',
+      category: 'privacy',
+      platform: 'web',
+      message: 'Quero exercer meu direito de acesso aos dados vinculados à conta.',
+      website: '',
+    });
+
+    expect(response.status).toBe(201);
+    expect(sent).toHaveLength(1);
+    expect(sent[0].subject).toContain('Privacidade e direitos do titular');
+  });
+
   it('absorve o honeypot sem enviar e-mail', async () => {
     const response = await api.post('/api/v1/support').send({
       name: 'Robô Visitante',

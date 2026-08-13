@@ -54,7 +54,8 @@ body.marketing-page {
   background: var(--night);
 }
 
-body.support-page {
+body.support-page,
+body.privacy-page {
   color-scheme: light;
   color: var(--ink);
   background: var(--paper);
@@ -118,7 +119,8 @@ a {
   border-bottom-color: rgba(255, 255, 255, 0.08);
 }
 
-.support-page .site-header {
+.support-page .site-header,
+.privacy-page .site-header {
   background: rgba(245, 248, 250, 0.94);
   border-bottom-color: var(--line-light);
 }
@@ -155,7 +157,8 @@ a {
   color: var(--mint);
 }
 
-.support-page .brand strong {
+.support-page .brand strong,
+.privacy-page .brand strong {
   color: var(--mint-deep);
 }
 
@@ -176,7 +179,8 @@ a {
   color: var(--mint);
 }
 
-.support-page .nav-link:hover {
+.support-page .nav-link:hover,
+.privacy-page .nav-link:hover {
   color: var(--mint-deep);
 }
 
@@ -220,13 +224,15 @@ a {
   background: rgba(87, 214, 161, 0.08);
 }
 
-.support-page .button {
+.support-page .button,
+.privacy-page .button {
   color: var(--white);
   background: var(--mint-deep);
   box-shadow: 0 10px 26px rgba(13, 127, 87, 0.18);
 }
 
-.support-page .button:hover {
+.support-page .button:hover,
+.privacy-page .button:hover {
   background: #096d4a;
 }
 
@@ -818,11 +824,300 @@ a {
   border: 0;
 }
 
+/* Privacy */
+
+.privacy-hero {
+  padding: 88px 0 82px;
+  color: var(--white);
+  background: var(--night);
+}
+
+.privacy-hero-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.05fr) minmax(360px, 0.7fr);
+  gap: clamp(64px, 8vw, 120px);
+  align-items: end;
+}
+
+.policy-meta {
+  margin: 0 0 24px;
+  color: var(--mint);
+  font-size: 0.9rem;
+  font-weight: 740;
+}
+
+.privacy-hero h1 {
+  max-width: 770px;
+  font-size: clamp(3.2rem, 7vw, 5.9rem);
+}
+
+.privacy-hero-copy > p:last-child {
+  max-width: 63ch;
+  margin: 28px 0 0;
+  color: #bdcad5;
+  font-size: clamp(1.06rem, 2vw, 1.22rem);
+}
+
+.privacy-promises {
+  margin: 0;
+  border-top: 1px solid var(--line-dark);
+}
+
+.privacy-promises > div {
+  padding: 20px 0;
+  border-bottom: 1px solid var(--line-dark);
+}
+
+.privacy-promises dt {
+  margin-bottom: 5px;
+  color: var(--mint);
+  font-family: var(--display);
+  font-size: 1.05rem;
+  font-weight: 720;
+}
+
+.privacy-promises dd {
+  margin: 0;
+  color: #bdcad5;
+  font-size: 0.94rem;
+}
+
+.privacy-main {
+  padding: 96px 0 128px;
+}
+
+.privacy-layout {
+  display: grid;
+  grid-template-columns: 230px minmax(0, 760px);
+  gap: clamp(64px, 9vw, 132px);
+  align-items: start;
+  justify-content: start;
+}
+
+.privacy-index {
+  position: sticky;
+  top: 24px;
+}
+
+.privacy-index strong {
+  display: block;
+  margin-bottom: 15px;
+  font-family: var(--display);
+  font-size: 1.06rem;
+}
+
+.privacy-index ol {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-light);
+}
+
+.privacy-index li {
+  border-bottom: 1px solid var(--line-light);
+}
+
+.privacy-index a {
+  min-height: 47px;
+  padding: 11px 4px;
+  display: flex;
+  align-items: center;
+  color: var(--slate);
+  text-decoration: none;
+  font-size: 0.9rem;
+  font-weight: 680;
+}
+
+.privacy-index a:hover {
+  color: var(--mint-deep);
+}
+
+.privacy-content {
+  min-width: 0;
+}
+
+.policy-section {
+  scroll-margin-top: 28px;
+  padding: 0 0 72px;
+}
+
+.policy-section + .policy-section {
+  padding-top: 72px;
+  border-top: 1px solid var(--line-light);
+}
+
+.policy-section h2 {
+  max-width: 700px;
+  margin: 0 0 26px;
+  font-family: var(--display);
+  font-size: clamp(2rem, 4vw, 3.15rem);
+  font-weight: 710;
+  line-height: 1.04;
+  letter-spacing: -0.035em;
+  text-wrap: balance;
+}
+
+.policy-section h3 {
+  margin: 34px 0 9px;
+  font-family: var(--display);
+  font-size: 1.35rem;
+  letter-spacing: -0.02em;
+}
+
+.policy-section p {
+  max-width: 72ch;
+  margin: 0 0 18px;
+  color: #405469;
+}
+
+.privacy-callout {
+  margin: 32px 0;
+  padding: 26px 28px;
+  color: #093d2c;
+  background: #dff6eb;
+  border-radius: var(--radius-md);
+}
+
+.privacy-callout strong {
+  display: block;
+  margin-bottom: 7px;
+  font-family: var(--display);
+  font-size: 1.22rem;
+}
+
+.privacy-callout p {
+  margin: 0;
+  color: #244f40;
+}
+
+.data-ledger {
+  margin: 34px 0 0;
+  border-top: 1px solid var(--line-light);
+}
+
+.data-ledger > div {
+  display: grid;
+  grid-template-columns: minmax(170px, 0.6fr) minmax(0, 1.4fr);
+  gap: 34px;
+  padding: 24px 0;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.data-ledger dt {
+  font-family: var(--display);
+  font-size: 1.1rem;
+  font-weight: 720;
+}
+
+.data-ledger dd {
+  margin: 0;
+  color: var(--slate);
+}
+
+.purpose-table {
+  margin: 34px 0 28px;
+  border-top: 1px solid #b9c7d2;
+}
+
+.purpose-row {
+  display: grid;
+  grid-template-columns: minmax(180px, 0.62fr) minmax(0, 1.38fr);
+  gap: 30px;
+  padding: 19px 0;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.purpose-row > span:last-child {
+  color: var(--slate);
+}
+
+.purpose-heading {
+  padding: 12px 0;
+  color: #355167;
+  background: #e9eff3;
+  font-size: 0.82rem;
+  font-weight: 760;
+}
+
+.purpose-heading span:first-child,
+.purpose-row > strong {
+  padding-left: 14px;
+}
+
+.purpose-heading span:last-child {
+  color: #355167;
+}
+
+.policy-list,
+.rights-list {
+  margin: 24px 0 28px;
+  padding: 0;
+  list-style: none;
+  border-top: 1px solid var(--line-light);
+}
+
+.policy-list li,
+.rights-list li {
+  position: relative;
+  padding: 17px 4px 17px 32px;
+  color: #405469;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.policy-list li::before,
+.rights-list li::before {
+  content: "";
+  position: absolute;
+  top: 25px;
+  left: 7px;
+  width: 8px;
+  height: 8px;
+  background: var(--mint-deep);
+  border-radius: 50%;
+}
+
+.policy-contact {
+  padding-bottom: 0;
+}
+
+.policy-contact .button {
+  margin-top: 8px;
+}
+
+.official-references {
+  margin-top: 42px;
+  padding-top: 22px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px 22px;
+  border-top: 1px solid var(--line-light);
+  font-size: 0.88rem;
+}
+
+.official-references strong {
+  width: 100%;
+  font-family: var(--display);
+  font-size: 1rem;
+}
+
+.official-references a {
+  color: var(--mint-deep);
+  font-weight: 680;
+  text-underline-offset: 4px;
+}
+
+.policy-section .policy-updated {
+  margin: 24px 0 0;
+  color: var(--slate);
+  font-size: 0.86rem;
+}
+
 .site-footer {
   border-top: 1px solid var(--line-dark);
 }
 
-.support-page .site-footer {
+.support-page .site-footer,
+.privacy-page .site-footer {
   border-top-color: var(--line-light);
 }
 
@@ -836,7 +1131,8 @@ a {
   font-size: 0.9rem;
 }
 
-.support-page .footer-inner {
+.support-page .footer-inner,
+.privacy-page .footer-inner {
   color: var(--slate);
 }
 
@@ -872,7 +1168,9 @@ a {
   .story-grid,
   .capability-intro,
   .support-hero-grid,
-  .support-layout {
+  .support-layout,
+  .privacy-hero-grid,
+  .privacy-layout {
     grid-template-columns: 1fr;
   }
 
@@ -921,6 +1219,32 @@ a {
 
   .support-note {
     max-width: 48ch;
+  }
+
+  .privacy-hero-grid {
+    gap: 52px;
+  }
+
+  .privacy-layout {
+    gap: 72px;
+  }
+
+  .privacy-index {
+    position: static;
+  }
+
+  .privacy-index ol {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+  }
+
+  .privacy-index li:nth-child(odd) {
+    border-right: 1px solid var(--line-light);
+  }
+
+  .privacy-index a {
+    padding-right: 14px;
+    padding-left: 10px;
   }
 }
 
@@ -1116,6 +1440,72 @@ a {
 
   .support-layout {
     gap: 62px;
+  }
+
+  .privacy-hero {
+    padding: 58px 0 64px;
+  }
+
+  .privacy-hero h1 {
+    font-size: clamp(2.85rem, 14vw, 4rem);
+  }
+
+  .privacy-hero-grid {
+    gap: 42px;
+  }
+
+  .privacy-main {
+    padding: 64px 0 88px;
+  }
+
+  .privacy-layout {
+    gap: 58px;
+  }
+
+  .privacy-index ol {
+    grid-template-columns: 1fr;
+  }
+
+  .privacy-index li:nth-child(odd) {
+    border-right: 0;
+  }
+
+  .policy-section {
+    padding-bottom: 52px;
+  }
+
+  .policy-section + .policy-section {
+    padding-top: 52px;
+  }
+
+  .policy-section h2 {
+    font-size: clamp(2rem, 10vw, 2.65rem);
+  }
+
+  .privacy-callout {
+    margin: 26px 0;
+    padding: 22px 20px;
+  }
+
+  .data-ledger > div,
+  .purpose-row {
+    grid-template-columns: 1fr;
+    gap: 7px;
+  }
+
+  .purpose-heading {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+
+  .purpose-row > strong {
+    padding-left: 0;
   }
 
   .support-form-wrap {

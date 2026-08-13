@@ -32,7 +32,7 @@ O uso combina lançamentos cotidianos, conferência mensal, planejamento por cat
 - Compartilhamento de conta com permissões e conexões externas via MCP.
 - Modo claro e escuro, armazenamento local offline-first, sincronização e bloqueio biométrico quando suportado.
 - Aplicativo Flutter para iOS, Android e Web, com API Node.js/Express e MySQL em produção.
-- Páginas públicas de marketing e suporte devem funcionar sem autenticação no mesmo domínio da versão Web.
+- Páginas públicas de marketing, suporte e privacidade devem funcionar sem autenticação no mesmo domínio da versão Web.
 - Solicitações públicas de suporte são enviadas pela API e dependem da configuração SMTP e de destinatário no ambiente do servidor.
 
 ## Brand Commitments

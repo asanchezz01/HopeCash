@@ -56,7 +56,7 @@ paths:
               properties:
                 name: { type: string, minLength: 2, maxLength: 120 }
                 email: { type: string, format: email, maxLength: 254 }
-                category: { type: string, enum: [access, sync, transactions, imports, hope, planning, other] }
+                category: { type: string, enum: [access, sync, transactions, imports, hope, planning, privacy, other] }
                 app_version: { type: string, maxLength: 40 }
                 platform: { type: string, enum: [ios, android, web, ''] }
                 message: { type: string, minLength: 20, maxLength: 4000 }

@@ -17,6 +17,7 @@ const categoryLabels = {
   imports: 'Importação de extrato',
   hope: 'Hope e comandos por voz',
   planning: 'Contas, cartões e planejamento',
+  privacy: 'Privacidade e direitos do titular',
   other: 'Outro assunto',
 };
 

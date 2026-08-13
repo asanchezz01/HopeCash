@@ -2,9 +2,6 @@ FROM node:24-alpine
 
 WORKDIR /app
 
-# Pós-processamento com preservação de formantes para perguntas da Hope.
-RUN apk add --no-cache rubberband
-
 COPY package*.json ./
 RUN npm ci --omit=dev
 

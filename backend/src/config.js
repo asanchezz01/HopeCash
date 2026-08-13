@@ -1,5 +1,7 @@
 import 'dotenv/config';
 
+const aiEnabled = process.env.AI_ENABLED !== 'false';
+
 export const config = {
   env: process.env.NODE_ENV || 'development',
   port: Number(process.env.PORT || 3000),
@@ -9,27 +11,35 @@ export const config = {
     refreshTtlDays: Number(process.env.JWT_REFRESH_TTL_DAYS || 30),
   },
   logLevel: process.env.LOG_LEVEL || 'info',
-  ollama: {
-    url: process.env.OLLAMA_URL,
-    timeoutMs: Number(process.env.OLLAMA_TIMEOUT_MS || 30_000),
-    // Modelo por tarefa: chat conversacional × extração/classificação (fast).
-    // Sem as variáveis específicas, tudo cai no OLLAMA_MODEL.
+  ai: {
+    // Chave operacional para ambientes que devem manter a Hope totalmente
+    // inativa. O bloqueio também é aplicado nos clientes LLM e TTS.
+    enabled: aiEnabled,
+    provider: process.env.AI_PROVIDER || 'groq',
+  },
+  llm: {
+    url: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
+    apiKey: process.env.GROQ_API_KEY || '',
+    timeoutMs: Number(process.env.GROQ_TIMEOUT_MS || 30_000),
+    reasoningEffort: process.env.GROQ_REASONING_EFFORT || 'low',
+    // Modelo por tarefa: chat e conteúdo no 120B; extração no 20B.
     models: {
-      default: process.env.OLLAMA_MODEL || 'qwen3.6:35b',
-      chat: process.env.OLLAMA_MODEL_CHAT || process.env.OLLAMA_MODEL || 'qwen3.6:35b',
-      fast: process.env.OLLAMA_MODEL_FAST || process.env.OLLAMA_MODEL || 'qwen3.6:35b',
+      default: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+      chat: process.env.GROQ_MODEL_CHAT || process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+      fast: process.env.GROQ_MODEL_FAST || 'openai/gpt-oss-20b',
     },
   },
   tts: {
-    // "Hope Velvet": voz feminina pt-BR, calorosa e elegante. O Coqui
-    // existente permanece como contingência sem expor dados fora da LAN.
-    provider: process.env.TTS_PROVIDER || 'kokoro',
-    url: process.env.TTS_URL,
-    fallbackProvider: process.env.TTS_FALLBACK_PROVIDER || 'coqui',
-    fallbackUrl: process.env.TTS_FALLBACK_URL,
-    model: process.env.TTS_MODEL || 'kokoro',
-    // 2 partes da dicção pt-BR + 1 parte de um timbre feminino mais claro.
-    voice: process.env.TTS_VOICE || 'pf_dora(2)+af_bella(1)',
+    enabled: aiEnabled && process.env.TTS_ENABLED !== 'false',
+    provider: process.env.TTS_PROVIDER || 'azure',
+    apiKey: process.env.AZURE_SPEECH_KEY || '',
+    region: process.env.AZURE_SPEECH_REGION || 'brazilsouth',
+    endpoint: (process.env.AZURE_SPEECH_ENDPOINT || 'https://brazilsouth.api.cognitive.microsoft.com/').replace(/\/+$/, ''),
+    url: process.env.AZURE_SPEECH_TTS_URL
+      || `https://${process.env.AZURE_SPEECH_REGION || 'brazilsouth'}.tts.speech.microsoft.com/cognitiveservices/v1`,
+    voicesUrl: process.env.AZURE_SPEECH_VOICES_URL
+      || `https://${process.env.AZURE_SPEECH_REGION || 'brazilsouth'}.tts.speech.microsoft.com/cognitiveservices/voices/list`,
+    voice: process.env.AZURE_SPEECH_VOICE || 'pt-BR-ThalitaMultilingualNeural',
     format: process.env.TTS_FORMAT || 'mp3',
     speed: Number(process.env.TTS_SPEED || 0.96),
     timeoutMs: Number(process.env.TTS_TIMEOUT_MS || 45_000),

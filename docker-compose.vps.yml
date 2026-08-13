@@ -1,0 +1,33 @@
+services:
+  proxy-manager:
+    image: jc21/nginx-proxy-manager:2.15.0
+    container_name: hopecash-proxy-manager
+    restart: unless-stopped
+    environment:
+      DISABLE_IPV6: "true"
+    ports:
+      - "80:80"
+      - "443:443"
+      # Administração somente via túnel SSH: ssh -L 8181:127.0.0.1:81 root@VPS
+      - "127.0.0.1:${NPM_ADMIN_PORT:-81}:81"
+    volumes:
+      - hopecash_npm_data:/data
+      - hopecash_npm_letsencrypt:/etc/letsencrypt
+    networks:
+      - proxy
+
+  mysql:
+    restart: unless-stopped
+
+  api:
+    restart: unless-stopped
+
+  web:
+    restart: unless-stopped
+
+  retaguarda:
+    restart: unless-stopped
+
+volumes:
+  hopecash_npm_data:
+  hopecash_npm_letsencrypt:

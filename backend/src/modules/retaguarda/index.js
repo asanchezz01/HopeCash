@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { db } from '../../db/knex.js';
 import { authenticateRetaguarda } from '../../middleware/retaguardaAuth.js';
 import { validate } from '../../middleware/validate.js';
-import { ollama } from '../ai/ollama.js';
+import { llm } from '../ai/llm.js';
 import authRoutes from './auth.routes.js';
 import usersRoutes from './users.routes.js';
 import appUsersRoutes from './appUsers.routes.js';
@@ -73,9 +73,9 @@ router.get('/stats', validate(z.object({
   });
 });
 
-/** Estado do servidor de IA (Ollama) para o painel de monitoramento. */
+/** Estado do serviço Groq para o painel de monitoramento. */
 router.get('/ai/health', async (_req, res) => {
-  res.json({ data: await ollama.health() });
+  res.json({ data: await llm.health() });
 });
 
 router.use('/users', usersRoutes);

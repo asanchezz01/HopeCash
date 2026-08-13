@@ -1,16 +1,16 @@
 #!/usr/bin/env node
 /**
- * Avaliação de modelos Ollama para as tarefas de IA do HopeCash.
+ * Avaliação de modelos Groq para as tarefas de IA do HopeCash.
  *
  * Roda o golden set de frases pt-BR (extração de lançamentos, com o MESMO
  * prompt da rota /ai/parse-transaction) contra cada modelo candidato e mede
  * acurácia por campo, latência e suporte a tool calling — base objetiva para
- * escolher OLLAMA_MODEL / OLLAMA_MODEL_CHAT / OLLAMA_MODEL_FAST.
+ * escolher GROQ_MODEL / GROQ_MODEL_CHAT / GROQ_MODEL_FAST.
  *
  * Uso:
- *   node scripts/eval-ai.js                       # todos os modelos instalados (exceto embeddings)
- *   node scripts/eval-ai.js --models phi4:14b,gemma4:26b
- *   node scripts/eval-ai.js --url http://ollama.example.internal:11434
+ *   node scripts/eval-ai.js                       # modelos configurados
+ *   node scripts/eval-ai.js --models openai/gpt-oss-20b,openai/gpt-oss-120b
+ *   node scripts/eval-ai.js --url https://api.groq.com/openai/v1
  */
 
 const args = process.argv.slice(2);
@@ -18,10 +18,10 @@ const argValue = (name) => {
   const i = args.indexOf(`--${name}`);
   return i >= 0 ? args[i + 1] : null;
 };
-if (argValue('url')) process.env.OLLAMA_URL = argValue('url');
+if (argValue('url')) process.env.GROQ_BASE_URL = argValue('url');
 
 // Imports dinâmicos para que --url vença o .env (dotenv não sobrescreve process.env).
-const { ollama } = await import('../src/modules/ai/ollama.js');
+const { llm } = await import('../src/modules/ai/llm.js');
 const { PARSE_OUTPUT_SCHEMA, parseOutputSchema, parseSystemPrompt, parseUserPayload } =
   await import('../src/modules/ai/prompts/parseTransaction.js');
 const { today, addDays } = await import('../src/utils/time.js');
@@ -118,7 +118,7 @@ const cases = [
 /** Sonda de tool calling: o modelo devolve tool_calls para uma pergunta óbvia? */
 async function probeTools(model) {
   try {
-    const message = await ollama.chat({
+    const message = await llm.chat({
       model,
       timeoutMs: EVAL_TIMEOUT_MS,
       temperature: 0,
@@ -150,7 +150,7 @@ async function evalModel(model) {
     let output = null;
     let error = null;
     try {
-      const raw = await ollama.chatJson({
+      const raw = await llm.chatJson({
         model,
         format: PARSE_OUTPUT_SCHEMA,
         temperature: 0,
@@ -217,16 +217,16 @@ function report(model, results, toolSupport) {
 
 // ---------------------------------------------------------------------------
 
-const health = await ollama.health();
+const health = await llm.health();
 if (!health.ok) {
-  console.error(`Ollama indisponível em ${health.url}: ${health.error}`);
+  console.error(`Groq indisponível: ${health.error}`);
   process.exit(1);
 }
-console.log(`Ollama ${health.version} em ${health.url}`);
+console.log('Groq disponível');
 
 const models = argValue('models')
   ? argValue('models').split(',').map((m) => m.trim()).filter(Boolean)
-  : health.installed_models.map((m) => m.name).filter((n) => !/embed/i.test(n));
+  : [...new Set(Object.values(llm.models))];
 console.log(`Modelos sob avaliação: ${models.join(', ')} · ${cases.length} casos\n`);
 
 const summaries = [];

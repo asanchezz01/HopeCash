@@ -1,12 +1,13 @@
 #!/usr/bin/env bash
 # Publica o HopeCash com Docker Compose a partir de um checkout do repositorio.
-# Roda no servidor de producao — pelo runner self-hosted do GitHub Actions
-# (.github/workflows/deploy.yml) ou via SSH (scripts/deploy-server.ps1).
+# Roda no servidor de producao — acionado por SSH pelo GitHub Actions
+# (.github/workflows/deploy.yml) ou pelo script local (scripts/deploy-server.ps1).
 #
 # Entradas (variaveis de ambiente, todas opcionais):
 #   ENV_FILE                        .env persistente (padrao /opt/hopecash/.env)
 #   WEB_PORT / API_PORT / MYSQL_PORT  forcam portas; senao usa o .env ou a primeira livre
 #   API_BASE_URL / CORS_ALLOWED_ORIGINS
+#   COMPOSE_FILES                    lista de arquivos Compose separados por espaco
 #   NO_CACHE=1  PULL=1  PRUNE=1  RESET_DB=1
 set -euo pipefail
 
@@ -17,6 +18,8 @@ NO_CACHE="${NO_CACHE:-0}"
 PULL="${PULL:-0}"
 PRUNE="${PRUNE:-0}"
 RESET_DB="${RESET_DB:-0}"
+COMPOSE_FILES="${COMPOSE_FILES:-docker-compose.yml docker-compose.vps.yml}"
+DEPLOY_BACKUP_DIR="${DEPLOY_BACKUP_DIR:-/opt/hopecash/backups/deploy}"
 
 # Guarda as entradas antes de carregar o .env, que usa os mesmos nomes.
 WEB_PORT_IN="${WEB_PORT:-}"
@@ -25,6 +28,8 @@ MYSQL_PORT_IN="${MYSQL_PORT:-}"
 RETAGUARDA_PORT_IN="${RETAGUARDA_PORT:-}"
 API_BASE_URL_IN="${API_BASE_URL:-}"
 CORS_IN="${CORS_ALLOWED_ORIGINS:-}"
+BUILD_REF_IN="${BUILD_REF:-}"
+BUILD_TIME_IN="${BUILD_TIME:-}"
 
 first_free() {
   for port in "$@"; do
@@ -71,8 +76,16 @@ if [ -z "$MYSQL_PORT" ]; then MYSQL_PORT=$(first_free 3306 3307 3308 3310); fi
 # Sobrescreva com a variavel RETAGUARDA_PORT no .env ou no ambiente, se preciso.
 if [ -z "$RETAGUARDA_PORT" ]; then RETAGUARDA_PORT=8085; fi
 
-API_BASE_URL="${API_BASE_URL_IN:-${API_BASE_URL:-https://hopecash-api.coagru.com.br}}"
-CORS_ALLOWED_ORIGINS="${CORS_IN:-${CORS_ALLOWED_ORIGINS:-https://hopecash.coagru.com.br,https://hopecash-api.coagru.com.br,https://hopecash-retaguarda.coagru.com.br,http://10.1.4.82:8092,http://10.1.4.82:${RETAGUARDA_PORT}}}"
+# No VPS apenas o Nginx Proxy Manager publica portas externamente. Aplicacao e
+# banco ficam acessiveis somente por loopback/rede Docker.
+WEB_BIND_ADDRESS="${WEB_BIND_ADDRESS:-127.0.0.1}"
+API_BIND_ADDRESS="${API_BIND_ADDRESS:-127.0.0.1}"
+MYSQL_BIND_ADDRESS="${MYSQL_BIND_ADDRESS:-127.0.0.1}"
+RETAGUARDA_BIND_ADDRESS="${RETAGUARDA_BIND_ADDRESS:-127.0.0.1}"
+NPM_ADMIN_PORT="${NPM_ADMIN_PORT:-81}"
+
+API_BASE_URL="${API_BASE_URL_IN:-${API_BASE_URL:-https://api.hopecash.tech}}"
+CORS_ALLOWED_ORIGINS="${CORS_IN:-${CORS_ALLOWED_ORIGINS:-https://app.hopecash.tech,https://adm.hopecash.tech,https://api.hopecash.tech}}"
 
 # Garante que a origem web da retaguarda (porta dinamica) esteja no CORS, mesmo
 # quando um CORS_ALLOWED_ORIGINS pre-existente foi herdado do .env do servidor.
@@ -83,13 +96,14 @@ ensure_origin() {
     *) CORS_ALLOWED_ORIGINS="${CORS_ALLOWED_ORIGINS:+$CORS_ALLOWED_ORIGINS,}$origin" ;;
   esac
 }
-ensure_origin "http://10.1.4.82:${RETAGUARDA_PORT}"
-ensure_origin "https://hopecash-retaguarda.coagru.com.br"
+ensure_origin "https://app.hopecash.tech"
+ensure_origin "https://adm.hopecash.tech"
 
 # Metadados de versao/build — permitem confirmar, no rodape do dashboard, qual
 # commit esta efetivamente publicado em cada container. Recalculados a cada deploy.
-BUILD_REF="$(git rev-parse --short HEAD 2>/dev/null || echo unknown)"
-BUILD_TIME="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+BUILD_REF="${BUILD_REF_IN:-$(git rev-parse --short HEAD 2>/dev/null || echo unknown)}"
+BUILD_REF="${BUILD_REF:0:12}"
+BUILD_TIME="${BUILD_TIME_IN:-$(date -u +%Y-%m-%dT%H:%M:%SZ)}"
 
 MYSQL_DATABASE="${MYSQL_DATABASE:-hopecash}"
 MYSQL_USER="${MYSQL_USER:-hopecash}"
@@ -113,6 +127,31 @@ SUPPORT_EMAIL_TO="${SUPPORT_EMAIL_TO:-${MAIL_FROM:-${MAIL_USER:-suporte@hopecash
 SUPPORT_EMAIL_SUBJECT_PREFIX="${SUPPORT_EMAIL_SUBJECT_PREFIX:-[HopeCash Suporte]}"
 SUPPORT_RATE_LIMIT_MAX="${SUPPORT_RATE_LIMIT_MAX:-5}"
 SUPPORT_RATE_LIMIT_WINDOW_MINUTES="${SUPPORT_RATE_LIMIT_WINDOW_MINUTES:-15}"
+
+# Hope: credenciais permanecem exclusivamente no .env do VPS. O workflow envia
+# codigo, nunca segredos. Valores vazios fazem os healthchecks reportarem a
+# indisponibilidade do provedor sem expor as chaves.
+AI_ENABLED="${AI_ENABLED:-false}"
+AI_PROVIDER="${AI_PROVIDER:-groq}"
+GROQ_API_KEY="${GROQ_API_KEY:-}"
+GROQ_BASE_URL="${GROQ_BASE_URL:-https://api.groq.com/openai/v1}"
+GROQ_TIMEOUT_MS="${GROQ_TIMEOUT_MS:-30000}"
+GROQ_REASONING_EFFORT="${GROQ_REASONING_EFFORT:-low}"
+GROQ_MODEL="${GROQ_MODEL:-openai/gpt-oss-120b}"
+GROQ_MODEL_CHAT="${GROQ_MODEL_CHAT:-$GROQ_MODEL}"
+GROQ_MODEL_FAST="${GROQ_MODEL_FAST:-openai/gpt-oss-20b}"
+TTS_ENABLED="${TTS_ENABLED:-false}"
+TTS_PROVIDER="${TTS_PROVIDER:-azure}"
+AZURE_SPEECH_KEY="${AZURE_SPEECH_KEY:-}"
+AZURE_SPEECH_REGION="${AZURE_SPEECH_REGION:-brazilsouth}"
+AZURE_SPEECH_ENDPOINT="${AZURE_SPEECH_ENDPOINT:-}"
+AZURE_SPEECH_TTS_URL="${AZURE_SPEECH_TTS_URL:-}"
+AZURE_SPEECH_VOICES_URL="${AZURE_SPEECH_VOICES_URL:-}"
+AZURE_SPEECH_VOICE="${AZURE_SPEECH_VOICE:-pt-BR-ThalitaMultilingualNeural}"
+TTS_FORMAT="${TTS_FORMAT:-mp3}"
+TTS_SPEED="${TTS_SPEED:-0.96}"
+TTS_TIMEOUT_MS="${TTS_TIMEOUT_MS:-45000}"
+TTS_MAX_CHARS="${TTS_MAX_CHARS:-4000}"
 
 # Notificacoes push (Firebase Cloud Messaging) — preservadas do .env existente
 # no servidor (o operador preenche uma vez em /opt/hopecash/.env; ver
@@ -151,6 +190,11 @@ WEB_PORT=$WEB_PORT
 API_PORT=$API_PORT
 MYSQL_PORT=$MYSQL_PORT
 RETAGUARDA_PORT=$RETAGUARDA_PORT
+WEB_BIND_ADDRESS=$WEB_BIND_ADDRESS
+API_BIND_ADDRESS=$API_BIND_ADDRESS
+MYSQL_BIND_ADDRESS=$MYSQL_BIND_ADDRESS
+RETAGUARDA_BIND_ADDRESS=$RETAGUARDA_BIND_ADDRESS
+NPM_ADMIN_PORT=$NPM_ADMIN_PORT
 API_BASE_URL=$API_BASE_URL
 CORS_ALLOWED_ORIGINS=$CORS_ALLOWED_ORIGINS
 MYSQL_DATABASE=$MYSQL_DATABASE
@@ -172,6 +216,27 @@ SUPPORT_EMAIL_TO=$SUPPORT_EMAIL_TO
 SUPPORT_EMAIL_SUBJECT_PREFIX=$SUPPORT_EMAIL_SUBJECT_PREFIX
 SUPPORT_RATE_LIMIT_MAX=$SUPPORT_RATE_LIMIT_MAX
 SUPPORT_RATE_LIMIT_WINDOW_MINUTES=$SUPPORT_RATE_LIMIT_WINDOW_MINUTES
+AI_ENABLED=$AI_ENABLED
+AI_PROVIDER=$AI_PROVIDER
+GROQ_API_KEY=$GROQ_API_KEY
+GROQ_BASE_URL=$GROQ_BASE_URL
+GROQ_TIMEOUT_MS=$GROQ_TIMEOUT_MS
+GROQ_REASONING_EFFORT=$GROQ_REASONING_EFFORT
+GROQ_MODEL=$GROQ_MODEL
+GROQ_MODEL_CHAT=$GROQ_MODEL_CHAT
+GROQ_MODEL_FAST=$GROQ_MODEL_FAST
+TTS_ENABLED=$TTS_ENABLED
+TTS_PROVIDER=$TTS_PROVIDER
+AZURE_SPEECH_KEY=$AZURE_SPEECH_KEY
+AZURE_SPEECH_REGION=$AZURE_SPEECH_REGION
+AZURE_SPEECH_ENDPOINT=$AZURE_SPEECH_ENDPOINT
+AZURE_SPEECH_TTS_URL=$AZURE_SPEECH_TTS_URL
+AZURE_SPEECH_VOICES_URL=$AZURE_SPEECH_VOICES_URL
+AZURE_SPEECH_VOICE=$AZURE_SPEECH_VOICE
+TTS_FORMAT=$TTS_FORMAT
+TTS_SPEED=$TTS_SPEED
+TTS_TIMEOUT_MS=$TTS_TIMEOUT_MS
+TTS_MAX_CHARS=$TTS_MAX_CHARS
 FIREBASE_ENABLED=$FIREBASE_ENABLED
 FIREBASE_PROJECT_ID=$FIREBASE_PROJECT_ID
 FIREBASE_CLIENT_EMAIL=$FIREBASE_CLIENT_EMAIL
@@ -190,7 +255,7 @@ FIREBASE_VAPID_KEY=$FIREBASE_VAPID_KEY
 EOF
 
 # Mantem configuracoes adicionais trazidas pelo .env do projeto mesmo quando
-# elas nao fazem parte da lista gerenciada acima (ex.: LOG_LEVEL/OLLAMA_*).
+# elas nao fazem parte da lista gerenciada acima (ex.: LOG_LEVEL).
 # Para chaves gerenciadas, os valores normalizados deste script prevalecem.
 while IFS= read -r line || [ -n "$line" ]; do
   case "$line" in ''|'#'*) continue ;; esac
@@ -212,30 +277,26 @@ rm -f docker-compose.server.yml app/Dockerfile.deploy
 # Fixa o nome do projeto para que o volume do MySQL (hopecash_hopecash_mysql)
 # seja reaproveitado independentemente do diretorio de checkout.
 export COMPOSE_PROJECT_NAME=hopecash
-COMPOSE=(docker compose --env-file "$ENV_FILE" -f docker-compose.yml)
+COMPOSE=(docker compose --env-file "$ENV_FILE")
+for compose_file in $COMPOSE_FILES; do
+  if [ ! -f "$compose_file" ]; then
+    echo "Arquivo Compose não encontrado: $compose_file" >&2
+    exit 1
+  fi
+  COMPOSE+=(-f "$compose_file")
+done
+
+"${COMPOSE[@]}" config --quiet
 
 echo "Portas selecionadas: web=$WEB_PORT api=$API_PORT mysql=$MYSQL_PORT retaguarda=$RETAGUARDA_PORT"
 
 if [ "$RESET_DB" = "1" ]; then
-  # Reset explicito do banco: aqui a parada é intencional, entao derruba tudo
-  # (inclusive o mysql) e recomeca do zero.
-  echo "ATENCAO: removendo containers e volumes do projeto HopeCash (mysql sera recriado)"
-  "${COMPOSE[@]}" down --remove-orphans --volumes || true
-
-  for container in hopecash-mysql hopecash-api hopecash-web hopecash-retaguarda; do
-    if docker container inspect "$container" >/dev/null 2>&1; then
-      echo "Removendo container antigo: $container"
-      docker rm -f "$container" >/dev/null 2>&1 || true
-    fi
-  done
-
-  # A rede default pode sobrar (ex.: o down nao a removeu por causa de um
-  # container preso a ela). Remove-la evita o conflito "network with name
-  # hopecash_default already exists" no 'up' seguinte.
-  if docker network inspect hopecash_default >/dev/null 2>&1; then
-    echo "Removendo rede antiga: hopecash_default"
-    docker network rm hopecash_default >/dev/null 2>&1 || true
-  fi
+  # Remove exclusivamente o banco e seu volume. Os volumes do Nginx Proxy
+  # Manager guardam hosts/certificados e nunca podem ser atingidos por reset.
+  echo "ATENCAO: removendo somente o MySQL e o volume hopecash_mysql"
+  "${COMPOSE[@]}" stop api mysql || true
+  "${COMPOSE[@]}" rm -f api mysql || true
+  docker volume rm "${COMPOSE_PROJECT_NAME}_hopecash_mysql" >/dev/null 2>&1 || true
 else
   # Deploy normal: nao derruba nada aqui. Containers de um deploy antigo sob
   # outro nome de projeto compose colidiriam com os container_name fixos ao
@@ -252,6 +313,75 @@ else
   done
 fi
 
+backup_database() {
+  if ! docker container inspect hopecash-mysql >/dev/null 2>&1 \
+    || [ "$(docker inspect -f '{{.State.Running}}' hopecash-mysql 2>/dev/null)" != "true" ]; then
+    echo "MySQL ainda não existe; backup pré-deploy dispensado."
+    return 0
+  fi
+
+  mkdir -p "$DEPLOY_BACKUP_DIR"
+  chmod 700 "$DEPLOY_BACKUP_DIR"
+  local stamp backup_path
+  stamp="$(date -u +%Y%m%dT%H%M%SZ)"
+  backup_path="$DEPLOY_BACKUP_DIR/pre-deploy-${stamp}-${BUILD_REF}.sql.gz"
+  echo "Criando backup transacional em $backup_path"
+  docker exec -e "MYSQL_PWD=$MYSQL_PASSWORD" hopecash-mysql \
+    mysqldump --user="$MYSQL_USER" --single-transaction --quick --no-tablespaces \
+      --routines --events --triggers "$MYSQL_DATABASE" \
+    | gzip -9 > "$backup_path"
+  test -s "$backup_path"
+  chmod 600 "$backup_path"
+  sha256sum "$backup_path" > "$backup_path.sha256"
+  chmod 600 "$backup_path.sha256"
+
+  # Mantém os dez backups automáticos mais recentes.
+  find "$DEPLOY_BACKUP_DIR" -maxdepth 1 -type f -name 'pre-deploy-*.sql.gz' \
+    -printf '%T@ %p\n' | sort -nr | tail -n +11 | cut -d' ' -f2- \
+    | while IFS= read -r old_backup; do
+        [ -n "$old_backup" ] || continue
+        rm -f -- "$old_backup" "$old_backup.sha256"
+      done
+}
+
+container_image_id() {
+  docker container inspect -f '{{.Image}}' "$1" 2>/dev/null || true
+}
+
+container_image_name() {
+  docker container inspect -f '{{.Config.Image}}' "$1" 2>/dev/null || true
+}
+
+OLD_API_IMAGE_ID="$(container_image_id hopecash-api)"
+OLD_API_IMAGE_NAME="$(container_image_name hopecash-api)"
+OLD_WEB_IMAGE_ID="$(container_image_id hopecash-web)"
+OLD_WEB_IMAGE_NAME="$(container_image_name hopecash-web)"
+OLD_RETAGUARDA_IMAGE_ID="$(container_image_id hopecash-retaguarda)"
+OLD_RETAGUARDA_IMAGE_NAME="$(container_image_name hopecash-retaguarda)"
+ROLLBACK_ARMED=0
+
+rollback_on_error() {
+  local exit_code=$?
+  trap - ERR
+  if [ "$ROLLBACK_ARMED" = "1" ]; then
+    echo "Deploy falhou após a troca; restaurando imagens anteriores..." >&2
+    [ -z "$OLD_API_IMAGE_ID" ] || [ -z "$OLD_API_IMAGE_NAME" ] \
+      || docker image tag "$OLD_API_IMAGE_ID" "$OLD_API_IMAGE_NAME"
+    [ -z "$OLD_WEB_IMAGE_ID" ] || [ -z "$OLD_WEB_IMAGE_NAME" ] \
+      || docker image tag "$OLD_WEB_IMAGE_ID" "$OLD_WEB_IMAGE_NAME"
+    [ -z "$OLD_RETAGUARDA_IMAGE_ID" ] || [ -z "$OLD_RETAGUARDA_IMAGE_NAME" ] \
+      || docker image tag "$OLD_RETAGUARDA_IMAGE_ID" "$OLD_RETAGUARDA_IMAGE_NAME"
+    "${COMPOSE[@]}" up -d --force-recreate --no-deps api web retaguarda || true
+    "${COMPOSE[@]}" ps || true
+  fi
+  exit "$exit_code"
+}
+trap rollback_on_error ERR
+
+if [ "$RESET_DB" != "1" ]; then
+  backup_database
+fi
+
 BUILD_ARGS=(build)
 if [ "$PULL" = "1" ]; then BUILD_ARGS+=(--pull); fi
 if [ "$NO_CACHE" = "1" ]; then BUILD_ARGS+=(--no-cache); fi
@@ -259,13 +389,14 @@ BUILD_ARGS+=(api web retaguarda)
 echo "Construindo novas imagens (aplicacao atual segue no ar durante o build)..."
 "${COMPOSE[@]}" "${BUILD_ARGS[@]}"
 
-# Garante o mysql no ar sem forcar recriacao: se ja estiver rodando com a
-# mesma config, isso e um no-op (sem restart, sem downtime do banco).
-"${COMPOSE[@]}" up -d --no-deps mysql
+# Garante infraestrutura no ar sem forcar recriacao. Se já estiver com a mesma
+# configuração, esses comandos são no-op.
+"${COMPOSE[@]}" up -d --no-deps mysql proxy-manager
 
 # So troca os containers da aplicacao depois que a imagem nova ja existe: o
 # 'stop antigo + start novo' acontece por servico, minimizando o tempo fora do
 # ar em vez de derrubar a stack inteira antes do build (como antes).
+ROLLBACK_ARMED=1
 "${COMPOSE[@]}" up -d --force-recreate --no-deps --remove-orphans api web retaguarda
 
 echo "Aguardando saude da API e do Web..."
@@ -296,6 +427,9 @@ curl -fsS "http://127.0.0.1:${WEB_PORT}/suporte/" \
 
 # Retaguarda: valida que a SPA responde.
 curl -fsS "http://127.0.0.1:${RETAGUARDA_PORT}/" >/dev/null
+
+ROLLBACK_ARMED=0
+trap - ERR
 
 if [ "$PRUNE" = "1" ]; then
   docker image prune -f

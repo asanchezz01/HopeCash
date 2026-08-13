@@ -20,7 +20,8 @@ HopeCash/
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Arquitetura, módulos, sincronização offline-first, segurança |
 | [docs/DATA_MODEL.md](docs/DATA_MODEL.md) | Modelo de dados completo (MySQL + SQLite local) |
 | [docs/API.md](docs/API.md) | Visão geral da API REST (Swagger em `/api/docs`) |
-| [docs/DEPLOY.md](docs/DEPLOY.md) | Deploy em produção (GitHub Actions com runner self-hosted + `deploy.bat`) |
+| [docs/DEPLOY.md](docs/DEPLOY.md) | Deploy no VPS via GitHub Actions/SSH + alternativa local |
+| [docs/VPS_STAGING.md](docs/VPS_STAGING.md) | Stack do novo VPS, Nginx Proxy Manager e procedimento do corte em duas etapas |
 | [docs/FLUTTERFIRE.md](docs/FLUTTERFIRE.md) | Notificações push (Firebase Cloud Messaging): Android/iOS/Web, VAPID, rotação de credencial, pendência de APNs |
 
 ## Início rápido (ambiente local)

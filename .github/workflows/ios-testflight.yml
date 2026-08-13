@@ -79,7 +79,7 @@ jobs:
           flutter build ipa --release \
             --build-number="$IOS_BUILD_NUMBER" \
             --export-options-plist="$HOME/export_options.plist" \
-            --dart-define=API_BASE_URL=https://hopecash-api.coagru.com.br
+            --dart-define=API_BASE_URL=https://api.hopecash.tech
 
       - name: Upload IPA artifact
         uses: actions/upload-artifact@v4

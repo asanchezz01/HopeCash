@@ -1,7 +1,7 @@
 import { logger } from '../../logger.js';
 import { addDays, addMonths, monthStart, today } from '../../utils/time.js';
-import { ollama, OllamaError } from './ollama.js';
-import { TOOLS, TOOLS_BY_NAME, callTool, toOllamaTool } from './tools/index.js';
+import { llm, LlmError } from './llm.js';
+import { TOOLS, TOOLS_BY_NAME, callTool, toLlmTool } from './tools/index.js';
 import { chatSystemPrompt } from './prompts/chat.js';
 import { deterministicWriteRoute } from './deterministicWrite.js';
 
@@ -197,41 +197,25 @@ const truncate = (text) => (text.length > MAX_TOOL_RESULT_CHARS
 
 /**
  * Uma rodada de chat em streaming: acumula a mensagem completa e repassa
- * os deltas de texto. qwen3 é um modelo "thinking" — desligamos o raciocínio
- * (think: false) para reduzir latência; se o modelo configurado não suportar
- * o parâmetro, re-tenta sem ele.
+ * os deltas de texto retornados pelo Groq.
  */
-async function streamOnce({ messages, tools, onDelta }, allowThinkFallback = true) {
+async function streamOnce({ messages, tools, onDelta }) {
   const message = { role: 'assistant', content: '', tool_calls: [] };
-  try {
-    const stream = ollama.chatStream({
-      model: ollama.models.chat,
-      messages,
-      tools,
-      think: false,
-      temperature: 0.3,
-      // A primeira chamada após ociosidade recarrega o modelo (~40-60s no
-      // servidor atual); o timeout padrão de 30s derrubaria o turno inteiro.
-      timeoutMs: AGENT_DEADLINE_MS,
-    });
-    for await (const chunk of stream) {
-      const m = chunk.message ?? {};
-      if (m.content) {
-        message.content += m.content;
-        onDelta?.(m.content);
-      }
-      if (m.tool_calls?.length) message.tool_calls.push(...m.tool_calls);
-      if (chunk.done) break;
+  const stream = llm.chatStream({
+    model: llm.models.chat,
+    messages,
+    tools,
+    temperature: 0.3,
+    timeoutMs: AGENT_DEADLINE_MS,
+  });
+  for await (const chunk of stream) {
+    const m = chunk.message ?? {};
+    if (m.content) {
+      message.content += m.content;
+      onDelta?.(m.content);
     }
-  } catch (err) {
-    if (allowThinkFallback && err instanceof OllamaError && /think/i.test(err.message)) {
-      const retry = await ollama.chat({
-        model: ollama.models.chat, messages, tools, temperature: 0.3, timeoutMs: AGENT_DEADLINE_MS,
-      });
-      if (retry.content) onDelta?.(retry.content);
-      return { role: 'assistant', content: retry.content ?? '', tool_calls: retry.tool_calls ?? [] };
-    }
-    throw err;
+    if (m.tool_calls?.length) message.tool_calls.push(...m.tool_calls);
+    if (chunk.done) break;
   }
   return message;
 }
@@ -254,7 +238,7 @@ export async function runAgent(auth, history, events = {}, context = {}) {
     { role: 'system', content: chatSystemPrompt(today()) },
     ...history,
   ];
-  const tools = TOOLS.map(toOllamaTool);
+  const tools = TOOLS.map(toLlmTool);
   const toolLog = [];
   const actionIds = [];
   const groundingRequired = requiresFinancialGrounding(history);
@@ -292,7 +276,7 @@ export async function runAgent(auth, history, events = {}, context = {}) {
 
   for (let i = 0; i < MAX_ITERATIONS; i++) {
     if (Date.now() - startedAt > AGENT_DEADLINE_MS) {
-      throw new OllamaError('Tempo total do agente esgotado');
+      throw new LlmError('Tempo total do agente esgotado');
     }
     // Última iteração roda sem tools para forçar uma resposta em texto.
     const isLast = i === MAX_ITERATIONS - 1;
@@ -344,7 +328,7 @@ export async function runAgent(auth, history, events = {}, context = {}) {
         logger.warn({ tool: name, err: err.message }, 'Tool do agente falhou');
       }
       toolLog.push({ name, arguments: args, result: payload });
-      messages.push({ role: 'tool', tool_name: name, content: payload });
+      messages.push({ role: 'tool', tool_call_id: call.id, tool_name: name, content: payload });
     }
     if (groundingRequired) {
       messages.push(roundHasEvidence
@@ -357,5 +341,5 @@ export async function runAgent(auth, history, events = {}, context = {}) {
     events.onDelta?.(SAFE_GROUNDING_FALLBACK);
     return { content: SAFE_GROUNDING_FALLBACK, tool_calls: toolLog, action_ids: actionIds, references: [] };
   }
-  throw new OllamaError('O agente excedeu o número máximo de iterações');
+  throw new LlmError('O agente excedeu o número máximo de iterações');
 }

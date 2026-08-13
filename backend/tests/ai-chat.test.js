@@ -6,14 +6,15 @@ let api;
 let token;
 let salarioId;
 
-/** Corpo de streaming NDJSON como o Ollama devolve (async iterable de bytes). */
+/** Corpo de streaming SSE como o Groq devolve (async iterable de bytes). */
 const streamBody = (chunks) => (async function* () {
   const enc = new TextEncoder();
-  for (const c of chunks) yield enc.encode(`${JSON.stringify(c)}\n`);
+  for (const c of chunks) yield enc.encode(`data: ${JSON.stringify(c)}\n\n`);
+  yield enc.encode('data: [DONE]\n\n');
 })();
 
 /** Cada chamada ao fetch consome a próxima sequência de chunks. */
-const ollamaStream = (...calls) => {
+const groqStream = (...calls) => {
   let i = 0;
   return vi.fn().mockImplementation(async () => ({
     ok: true,
@@ -22,13 +23,13 @@ const ollamaStream = (...calls) => {
 };
 
 const toolCallRound = (name, args = {}) => [
-  { message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] }, done: false },
-  { message: { role: 'assistant', content: '' }, done: true },
+  { choices: [{ delta: { role: 'assistant', tool_calls: [{ index: 0, id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: null }] },
+  { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
 ];
 
 const textRound = (...parts) => [
-  ...parts.map((text) => ({ message: { content: text }, done: false })),
-  { message: { content: '' }, done: true },
+  ...parts.map((text) => ({ choices: [{ delta: { content: text }, finish_reason: null }] })),
+  { choices: [{ delta: {}, finish_reason: 'stop' }] },
 ];
 
 beforeAll(async () => {
@@ -65,7 +66,7 @@ describe('Chat da Hope — agente com tools (SSE)', () => {
   let conversationId;
 
   it('executa a tool pedida pelo modelo e transmite a resposta em SSE', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolCallRound('get_balances'),
       textRound('Seu saldo total é ', '**R$ 5.000,00**.'),
     ));
@@ -107,7 +108,7 @@ describe('Chat da Hope — agente com tools (SSE)', () => {
   });
 
   it('continua a mesma conversa mantendo o histórico', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolCallRound('get_balances'),
       textRound('Claro! Posso detalhar por conta.'),
     ));
@@ -122,7 +123,7 @@ describe('Chat da Hope — agente com tools (SSE)', () => {
   });
 
   it('erro de tool vira dado para o modelo se corrigir, sem derrubar o stream', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolCallRound('list_transactions', { type: 'invalido' }),
       toolCallRound('list_transactions', { type: 'expense' }),
       textRound('Não consegui filtrar por esse tipo.'),
@@ -274,7 +275,7 @@ describe('Chat da Hope — agente com tools (SSE)', () => {
   });
 
   it('erro de nome não encontrado libera pergunta de esclarecimento em vez do fallback', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolCallRound('create_transaction', {
         type: 'expense', description: 'Teste', amount: 80,
         date: today(), account_id: 'Conta Inexistente',
@@ -308,7 +309,7 @@ describe('Chat da Hope — agente com tools (SSE)', () => {
     expect(assistant.references).toContainEqual({ id: salarioId, label: 'Salário' });
   });
 
-  it('Ollama fora do ar → evento de erro no stream (nunca 5xx)', async () => {
+  it('Groq fora do ar → evento de erro no stream (nunca 5xx)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
 
     const res = await api.post('/api/v1/ai/chat').set(auth(token))

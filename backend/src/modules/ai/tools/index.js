@@ -16,7 +16,7 @@ import { WRITE_TOOLS } from './write.js';
 /**
  * Registro central de ferramentas financeiras. O mesmo catálogo alimenta o
  * chat (Etapa 2), os insights (Etapa 4) e o servidor MCP (Etapa 6) — cada
- * tool já nasce no formato de function-calling do Ollama/MCP (name,
+ * tool já nasce no formato de function-calling do LLM/MCP (name,
  * description, inputSchema em JSON Schema). Ferramentas de escrita apenas
  * criam propostas; a execução acontece no endpoint explícito de confirmação.
  */
@@ -39,11 +39,12 @@ export const TOOLS = [
 
 export const TOOLS_BY_NAME = Object.fromEntries(TOOLS.map((t) => [t.name, t]));
 
-/** Formato de function-calling do Ollama (compatível com OpenAI/MCP). */
-export const toOllamaTool = (tool) => ({
+/** Formato de function-calling compatível com Groq/OpenAI/MCP. */
+export const toLlmTool = (tool) => ({
   type: 'function',
   function: { name: tool.name, description: tool.description, parameters: tool.inputSchema },
 });
+
 
 /**
  * Executa uma tool pelo nome, validando os parâmetros antes do handler.

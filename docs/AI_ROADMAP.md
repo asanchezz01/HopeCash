@@ -1,7 +1,7 @@
 # HopeCash — IA & MCP: Plano de Implementação
 
 > Roadmap para transformar o HopeCash em um app com assistente financeiro inteligente, usando o
-> servidor Ollama local (configurado por `OLLAMA_URL`) e uma arquitetura de ferramentas compatível com MCP.
+> Groq (LLM) e Azure Speech (voz), com uma arquitetura de ferramentas compatível com MCP.
 > Cada etapa é deployável sozinha e entrega valor incremental.
 
 ## 1. Visão
@@ -13,21 +13,33 @@ Um assistente financeiro ("**Hope**") embutido no app que:
 - **Gera insights proativos** — resumo mensal, gastos fora do padrão, orçamento estourando, contas a vencer.
 - **Automatiza classificação** — categorização de importações, notificações bancárias sem regra.
 
-**Premissa LGPD**: a IA roda 100% na infraestrutura própria (Ollama na LAN). Nenhum dado financeiro
-sai para serviços externos. IA é opt-out por usuário (Configurações).
+**Premissa de privacidade atual**: somente os fatos necessários à resposta são enviados ao Groq;
+o texto sintetizado é enviado ao Azure Speech. Escritas continuam locais, auditadas e dependem de
+confirmação humana. IA é opt-out por usuário (Configurações).
 
 ## 2. Ponto de partida (o que já existe)
 
 | Peça | Estado |
 |---|---|
-| Cliente Ollama | `modules/ai/ollama.js` — chat, chatJson, chatStream, embed, health; retry, timeouts, erros tipados |
+| Cliente LLM | `modules/ai/llm.js` — Groq: chat, chatJson, chatStream, tools, health; retry, timeouts, erros tipados |
 | `POST /ai/parse-transaction` | Voz → lançamento estruturado com ids reais do usuário; nunca grava; fallback local no app |
-| `GET /ai/health` | Estado do Ollama (app e retaguarda), com card de alerta no dashboard da retaguarda |
+| `GET /ai/health` | Estado do Groq (app e retaguarda), com card de alerta no dashboard da retaguarda |
 | Toolbox somente-leitura | `modules/ai/tools/` — 13 tools (saldos, lançamentos, orçamento, fluxo de caixa, faturas, metas, dívidas, investimentos, resumo do mês, busca); `GET/POST /ai/tools*` para debug (não-prod) |
-| Config | `OLLAMA_URL`, `OLLAMA_MODEL`/`_CHAT`/`_FAST` (`qwen3.5:35b`), `OLLAMA_TIMEOUT_MS` |
+| Config | `GROQ_API_KEY`, `GROQ_MODEL`/`_CHAT`/`_FAST`; Azure Speech para TTS |
 | Camada de dados segura | `syncRepo` — escopo user/family forçado + auditoria em toda escrita |
 | App | `AiApi` (Dio), `voice_add_sheet` com confirmação via formulário pré-preenchido |
 | Dados prontos p/ IA | `import_items.suggested_category_id`, `notifications` (tipos `unusual_expense`, `budget_exceeded`…), `ocr_data` em anexos |
+
+### Migração dos provedores (2026-08-13)
+
+- Ollama foi substituído pela API Groq compatível com OpenAI. O chat principal usa
+  `openai/gpt-oss-120b`; extração estruturada usa `openai/gpt-oss-20b`.
+- Kokoro/Coqui e o pós-processamento local foram substituídos por Azure Speech REST
+  com SSML e a voz `pt-BR-ThalitaMultilingualNeural`.
+- O cliente normaliza argumentos de tool calls para objetos internos, preserva SSE,
+  structured outputs, retry e as barreiras de confirmação/evidência existentes.
+- `AI_ENABLED=false` continua sendo o bloqueio global; e-mail, push e scheduler têm
+  chaves independentes e não são habilitados junto com a Hope.
 
 ## 3. Arquitetura alvo
 
@@ -39,7 +51,7 @@ sai para serviços externos. IA é opt-out por usuário (Configurações).
 ┌─────────────────────────────────────────────────────────────────┐
 │                Backend Express — modules/ai                     │
 │                                                                 │
-│  ollama.js    cliente único: chat, tools, structured outputs,   │
+│  llm.js       cliente Groq: chat, tools, structured outputs,    │
 │               streaming, health, retry, modelo por tarefa       │
 │  tools/       REGISTRO DE FERRAMENTAS (núcleo da arquitetura):  │
 │               nome + descrição + JSON Schema + handler +        │
@@ -51,7 +63,7 @@ sai para serviços externos. IA é opt-out por usuário (Configurações).
 └──────────────┬────────────────────────────┬─────────────────────┘
                │ syncRepo (escopo + audit)  │ HTTP
                ▼                            ▼
-              MySQL                 Ollama (host privado)
+              MySQL                 Groq + Azure Speech
 ```
 
 ### Princípios de projeto
@@ -64,7 +76,7 @@ sai para serviços externos. IA é opt-out por usuário (Configurações).
    consomem o mesmo registro. Schema JSON por tool desde o dia 1 = adaptador MCP vira trivial.
 4. **Escopo inegociável**: toda tool executa com `req.auth` via `syncRepo`; ids retornados pelo
    modelo são revalidados contra o banco (padrão já usado no parse-transaction).
-5. **Degradação graciosa**: Ollama fora do ar → app 100% funcional, recursos de IA se ocultam ou
+5. **Degradação graciosa**: provedor fora do ar → app 100% funcional, recursos de IA se ocultam ou
    caem em fallback (padrão já existente na voz).
 6. **Prompt injection**: descrições de transações e textos do usuário entram no prompt como *dados*;
    não existe tool "executar SQL"; escrita sempre passa por confirmação humana.

@@ -8,7 +8,7 @@ services:
       MYSQL_USER: ${MYSQL_USER:-hopecash}
       MYSQL_PASSWORD: ${MYSQL_PASSWORD:-hopecash}
     ports:
-      - "${MYSQL_PORT:-3306}:3306"
+      - "${MYSQL_BIND_ADDRESS:-0.0.0.0}:${MYSQL_PORT:-3306}:3306"
     volumes:
       - hopecash_mysql:/var/lib/mysql
     healthcheck:
@@ -16,6 +16,8 @@ services:
       interval: 5s
       timeout: 3s
       retries: 20
+    networks:
+      - data
 
   api:
     build: ./backend
@@ -55,21 +57,30 @@ services:
       # Versao/build publicados — expostos em GET /api/v1/version.
       BUILD_REF: ${BUILD_REF:-local}
       BUILD_TIME: ${BUILD_TIME:-}
-      # LLM local (Ollama) — modelo único compartilhado por Hope, Coaguru e Open WebUI.
-      OLLAMA_URL: ${OLLAMA_URL:?Defina OLLAMA_URL no arquivo .env do servidor}
-      OLLAMA_TIMEOUT_MS: ${OLLAMA_TIMEOUT_MS:-30000}
-      OLLAMA_MODEL: ${OLLAMA_MODEL:-qwen3.6:35b}
-      OLLAMA_MODEL_CHAT: ${OLLAMA_MODEL_CHAT:-qwen3.6:35b}
-      OLLAMA_MODEL_FAST: ${OLLAMA_MODEL_FAST:-qwen3.6:35b}
-      # Voz neural local no servidor privado de IA.
-      TTS_PROVIDER: ${TTS_PROVIDER:-kokoro}
-      TTS_URL: ${TTS_URL:?Defina TTS_URL no arquivo .env do servidor}
-      TTS_FALLBACK_PROVIDER: ${TTS_FALLBACK_PROVIDER:-coqui}
-      TTS_FALLBACK_URL: ${TTS_FALLBACK_URL:?Defina TTS_FALLBACK_URL no arquivo .env do servidor}
-      TTS_MODEL: ${TTS_MODEL:-kokoro}
-      TTS_VOICE: ${TTS_VOICE:-pf_dora(2)+af_bella(1)}
+      # Desliga integralmente a Hope (chat, interpretação e voz).
+      AI_ENABLED: ${AI_ENABLED:-true}
+      # LLM público via Groq (API compatível com OpenAI).
+      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      GROQ_API_KEY: ${GROQ_API_KEY:-}
+      GROQ_BASE_URL: ${GROQ_BASE_URL:-https://api.groq.com/openai/v1}
+      GROQ_TIMEOUT_MS: ${GROQ_TIMEOUT_MS:-30000}
+      GROQ_REASONING_EFFORT: ${GROQ_REASONING_EFFORT:-low}
+      GROQ_MODEL: ${GROQ_MODEL:-openai/gpt-oss-120b}
+      GROQ_MODEL_CHAT: ${GROQ_MODEL_CHAT:-openai/gpt-oss-120b}
+      GROQ_MODEL_FAST: ${GROQ_MODEL_FAST:-openai/gpt-oss-20b}
+      # Voz neural via Azure Speech.
+      TTS_ENABLED: ${TTS_ENABLED:-true}
+      TTS_PROVIDER: ${TTS_PROVIDER:-azure}
+      AZURE_SPEECH_KEY: ${AZURE_SPEECH_KEY:-}
+      AZURE_SPEECH_REGION: ${AZURE_SPEECH_REGION:-brazilsouth}
+      AZURE_SPEECH_ENDPOINT: ${AZURE_SPEECH_ENDPOINT:-}
+      AZURE_SPEECH_TTS_URL: ${AZURE_SPEECH_TTS_URL:-}
+      AZURE_SPEECH_VOICES_URL: ${AZURE_SPEECH_VOICES_URL:-}
+      AZURE_SPEECH_VOICE: ${AZURE_SPEECH_VOICE:-pt-BR-ThalitaMultilingualNeural}
       TTS_FORMAT: ${TTS_FORMAT:-mp3}
       TTS_SPEED: ${TTS_SPEED:-0.96}
+      TTS_TIMEOUT_MS: ${TTS_TIMEOUT_MS:-45000}
+      TTS_MAX_CHARS: ${TTS_MAX_CHARS:-4000}
       # Notificacoes push (Firebase Cloud Messaging) — sem credencial real
       # como padrao: so habilita de fato se as variaveis forem informadas.
       FIREBASE_ENABLED: ${FIREBASE_ENABLED:-false}
@@ -83,7 +94,10 @@ services:
       # Fallback por e-mail (quem não tem dispositivo push ativo) — reaproveita o MAIL_* acima.
       PUSH_EMAIL_APP_URL: ${PUSH_EMAIL_APP_URL:-}
     ports:
-      - "${API_PORT:-3000}:3000"
+      - "${API_BIND_ADDRESS:-0.0.0.0}:${API_PORT:-3000}:3000"
+    networks:
+      - data
+      - proxy
 
   web:
     build:
@@ -104,7 +118,9 @@ services:
     depends_on:
       - api
     ports:
-      - "${WEB_PORT:-8080}:80"
+      - "${WEB_BIND_ADDRESS:-0.0.0.0}:${WEB_PORT:-8080}:80"
+    networks:
+      - proxy
 
   retaguarda:
     build:
@@ -117,7 +133,13 @@ services:
     depends_on:
       - api
     ports:
-      - "${RETAGUARDA_PORT:-8085}:80"
+      - "${RETAGUARDA_BIND_ADDRESS:-0.0.0.0}:${RETAGUARDA_PORT:-8085}:80"
+    networks:
+      - proxy
 
 volumes:
   hopecash_mysql:
+
+networks:
+  data:
+  proxy:

@@ -147,13 +147,13 @@ Invoke-Remote -Target $target -Command 'whoami >/dev/null && docker compose vers
 $webOverride = if ($WebPort -gt 0) { "$WebPort" } else { '' }
 $apiOverride = if ($ApiPort -gt 0) { "$ApiPort" } else { '' }
 $mysqlOverride = if ($MysqlPort -gt 0) { "$MysqlPort" } else { '' }
-$apiBaseUrlValue = if ($ApiBaseUrl) { $ApiBaseUrl } elseif ($config['API_BASE_URL']) { $config['API_BASE_URL'] } else { 'https://hopecash-api.coagru.com.br' }
+$apiBaseUrlValue = if ($ApiBaseUrl) { $ApiBaseUrl } elseif ($config['API_BASE_URL']) { $config['API_BASE_URL'] } else { 'https://api.hopecash.tech' }
 $corsOriginsValue = if ($CorsAllowedOrigins) {
     $CorsAllowedOrigins
 } elseif ($config['CORS_ALLOWED_ORIGINS']) {
     $config['CORS_ALLOWED_ORIGINS']
 } else {
-    'https://hopecash.coagru.com.br,https://hopecash-api.coagru.com.br,http://10.1.4.82:8092'
+    'https://app.hopecash.tech,https://adm.hopecash.tech,https://api.hopecash.tech'
 }
 $noCacheFlag = if ($NoCache) { '1' } else { '0' }
 $pullFlag = if ($Pull) { '1' } else { '0' }

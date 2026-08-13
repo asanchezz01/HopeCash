@@ -24,7 +24,7 @@
     .\scripts\build-apk.ps1 -ApiBaseUrl http://10.1.4.82:3000   # aponta para outro backend
 #>
 param(
-    [string]$ApiBaseUrl = 'https://hopecash-api.coagru.com.br',
+    [string]$ApiBaseUrl = 'https://api.hopecash.tech',
     [switch]$SkipCodegen,
     [switch]$SkipSend,
     [switch]$SkipInstall,

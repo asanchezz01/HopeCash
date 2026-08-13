@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeAll, afterEach, vi } from 'vitest';
+import { config } from '../src/config.js';
 import { makeApp, registerUser, loginSuperuser, auth } from './helpers.js';
 
 let api;
@@ -8,16 +9,15 @@ let incomeCategoryId;
 let accountId;
 let cardId;
 
-/** Simula a resposta do Ollama (/api/chat com structured outputs). */
-const ollamaReply = (payload) => vi.fn().mockResolvedValue({
+/** Simula a resposta Groq (/chat/completions com structured outputs). */
+const groqReply = (payload) => vi.fn().mockResolvedValue({
   ok: true,
-  json: async () => ({ message: { content: JSON.stringify(payload) } }),
+  json: async () => ({ choices: [{ message: { role: 'assistant', content: JSON.stringify(payload) } }] }),
 });
 
-/** Simula o servidor Ollama para as rotas de health (/api/version, /api/tags). */
-const ollamaServer = ({ version = '0.9.0', models = [] } = {}) => vi.fn().mockImplementation(async (url) => {
-  if (String(url).endsWith('/api/version')) return { ok: true, json: async () => ({ version }) };
-  if (String(url).endsWith('/api/tags')) return { ok: true, json: async () => ({ models }) };
+/** Simula a listagem de modelos do Groq. */
+const groqServer = ({ models = [...new Set(Object.values(config.llm.models))] } = {}) => vi.fn().mockImplementation(async (url) => {
+  if (String(url).endsWith('/models')) return { ok: true, json: async () => ({ data: models.map((id) => ({ id, active: true })) }) };
   return { ok: false, status: 404 };
 });
 
@@ -40,11 +40,14 @@ beforeAll(async () => {
   cardId = card.body.data.id;
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  config.ai.enabled = true;
+  vi.unstubAllGlobals();
+});
 
 describe('IA — interpretação de lançamentos por voz', () => {
   it('devolve o lançamento estruturado com ids validados', async () => {
-    vi.stubGlobal('fetch', ollamaReply({
+    vi.stubGlobal('fetch', groqReply({
       type: 'expense', amount: 45.5, description: 'Mercado',
       date: '2026-07-04', category_id: categoryId, account_id: null,
       card_id: cardId, installments: 3, paid: true, confidence: 'high',
@@ -64,7 +67,7 @@ describe('IA — interpretação de lançamentos por voz', () => {
   });
 
   it('descarta ids inventados ou de tipo incompatível', async () => {
-    vi.stubGlobal('fetch', ollamaReply({
+    vi.stubGlobal('fetch', groqReply({
       type: 'expense', amount: 10, description: 'Pipoca',
       date: '2026-07-04', category_id: incomeCategoryId,
       account_id: 'id-inventado', card_id: null,
@@ -79,7 +82,7 @@ describe('IA — interpretação de lançamentos por voz', () => {
     expect(res.body.data.account_id).toBeNull(); // id não pertence ao usuário
   });
 
-  it('responde 503 quando o Ollama está fora do ar', async () => {
+  it('responde 503 quando o Groq está fora do ar', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
 
     const res = await api.post('/api/v1/ai/parse-transaction').set(auth(token))
@@ -103,7 +106,7 @@ describe('IA — interpretação de lançamentos por voz', () => {
     };
     const fetchMock = vi.fn()
       .mockRejectedValueOnce(new Error('ECONNREFUSED'))
-      .mockResolvedValueOnce({ ok: true, json: async () => ({ message: { content: JSON.stringify(payload) } }) });
+      .mockResolvedValueOnce({ ok: true, json: async () => ({ choices: [{ message: { content: JSON.stringify(payload) } }] }) });
     vi.stubGlobal('fetch', fetchMock);
 
     const res = await api.post('/api/v1/ai/parse-transaction').set(auth(token))
@@ -129,22 +132,31 @@ describe('IA — interpretação de lançamentos por voz', () => {
 });
 
 describe('IA — health', () => {
-  it('reporta ok com versão e modelos instalados', async () => {
-    vi.stubGlobal('fetch', ollamaServer({
-      version: '0.9.2',
-      models: [{ name: 'llama3.1:latest', size: 4_900_000_000, details: { parameter_size: '8.0B', family: 'llama' } }],
-    }));
+  it('não consulta provedor externo quando a Hope está desabilitada', async () => {
+    config.ai.enabled = false;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await api.get('/api/v1/ai/health').set(auth(token));
+
+    expect(res.status).toBe(200);
+    expect(res.body.data).toEqual({ ok: false, disabled: true, reason: 'AI_DISABLED' });
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('reporta ok com os modelos configurados disponíveis', async () => {
+    vi.stubGlobal('fetch', groqServer());
 
     const res = await api.get('/api/v1/ai/health').set(auth(token));
 
     expect(res.status).toBe(200);
     expect(res.body.data.ok).toBe(true);
-    expect(res.body.data.version).toBe('0.9.2');
-    expect(res.body.data.installed_models[0].name).toBe('llama3.1:latest');
+    expect(res.body.data.provider).toBe('groq');
+    expect(res.body.data.installed_models[0].name).toBeTruthy();
     expect(res.body.data.configured_models.default).toBeTruthy();
   });
 
-  it('reporta ok=false quando o Ollama está fora do ar (sem erro HTTP)', async () => {
+  it('reporta ok=false quando o Groq está fora do ar (sem erro HTTP)', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
 
     const res = await api.get('/api/v1/ai/health').set(auth(token));
@@ -161,7 +173,7 @@ describe('IA — health', () => {
 
   it('responde também na retaguarda com token próprio', async () => {
     const { access_token } = await loginSuperuser(api);
-    vi.stubGlobal('fetch', ollamaServer());
+    vi.stubGlobal('fetch', groqServer());
 
     const res = await api.get('/api/v1/retaguarda/ai/health').set(auth(access_token));
 

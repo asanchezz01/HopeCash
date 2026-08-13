@@ -48,7 +48,7 @@ jobs:
       - name: Build release app
         run: >-
           flutter build macos --release
-          --dart-define=API_BASE_URL=https://hopecash-api.coagru.com.br
+          --dart-define=API_BASE_URL=https://api.hopecash.tech
 
       - name: Package app
         run: |

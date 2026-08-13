@@ -97,7 +97,7 @@ export function createApp() {
     // ChatGPT). O custo do bcrypt (12 rounds) continua sendo a defesa real
     // contra força bruta aqui, não este limite.
     app.use('/api/v1/oauth', rateLimit({ windowMs: 15 * 60_000, limit: 120, standardHeaders: true }));
-    // Chat com IA: cada mensagem custa inferência no Ollama — limite dedicado.
+    // Chat com IA: cada mensagem consome inferência no Groq — limite dedicado.
     app.use('/api/v1/ai/chat', rateLimit({ windowMs: 15 * 60_000, limit: 30, standardHeaders: true }));
     app.use('/api/v1/ai/speech', rateLimit({ windowMs: 15 * 60_000, limit: 60, standardHeaders: true }));
   }

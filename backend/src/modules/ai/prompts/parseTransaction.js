@@ -7,9 +7,10 @@ import { addDays, today } from '../../../utils/time.js';
  * de modelos (scripts/eval-ai.js) — mudou aqui, mudou nos dois.
  */
 
-/** Schema JSON imposto ao Ollama via structured outputs (`format`). */
+/** Schema JSON imposto ao Groq via structured outputs (`response_format`). */
 export const PARSE_OUTPUT_SCHEMA = {
   type: 'object',
+  additionalProperties: false,
   properties: {
     type: { type: 'string', enum: ['expense', 'income'] },
     amount: { type: 'number' },

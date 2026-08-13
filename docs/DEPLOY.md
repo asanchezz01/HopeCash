@@ -1,75 +1,82 @@
-# Deploy em produção
+# Deploy no VPS
 
-O deploy é feito por um único script, [`scripts/deploy.sh`](../scripts/deploy.sh), que roda **no servidor de produção** a partir de um checkout do repositório: grava/preserva o `.env` persistente (padrão `/opt/hopecash/.env`), derruba os containers e os republica com o [`docker-compose.yml`](../docker-compose.yml) da raiz, aguardando o healthcheck da API e do Web.
+O fluxo padrão publica o commit da `main` no VPS `179.198.127.58` por SSH. O
+runner é hospedado pelo GitHub; não existe mais runner self-hosted no servidor.
 
-Há dois caminhos para acioná-lo:
+## Fluxo
 
-| Caminho | Quando usar |
+O workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml):
+
+1. valida o shell e a configuração combinada dos dois arquivos Compose;
+2. autentica o host por uma chave pública SSH fixada no workflow;
+3. sincroniza somente os arquivos versionados para `/opt/hopecash` via rsync;
+4. preserva `.env`, backups, uploads e demais dados exclusivos do VPS;
+5. executa [`scripts/deploy.sh`](../scripts/deploy.sh) sob um lock exclusivo;
+6. valida API, app e administração pelos domínios HTTPS públicos.
+
+O deploy dispara em todo push na `main`, exceto alterações apenas em documentação,
+e também pode ser iniciado manualmente em **Actions → Deploy VPS → Run workflow**.
+Execuções nunca rodam em paralelo.
+
+## Secret obrigatório
+
+Cadastre em **Settings → Secrets and variables → Actions → New repository secret**:
+
+| Secret | Conteúdo |
 |---|---|
-| **GitHub Actions** (push na `main` ou disparo manual) | Fluxo padrão — funciona de qualquer lugar, inclusive pelo celular |
-| **`deploy.bat`** (SSH a partir do PC) | Alternativa quando o runner estiver fora do ar |
+| `VPS_SSH_PRIVATE_KEY` | Chave privada SSH sem passphrase, cuja chave pública esteja autorizada para `root` no VPS |
 
-## GitHub Actions (recomendado)
+A chave privada nunca entra no repositório nem é enviada por rsync. A chave pública
+do host (`ssh-ed25519`) está fixada no workflow para impedir conexão silenciosa a
+outro servidor. Se o VPS for reinstalado e sua host key mudar, valide a nova chave
+fora do GitHub antes de atualizar o workflow.
 
-O workflow [`.github/workflows/deploy.yml`](../.github/workflows/deploy.yml) roda em um **runner self-hosted instalado no servidor** e dispara:
+O job usa o GitHub Environment `production`; regras de aprovação podem ser
+configuradas em **Settings → Environments → production**.
 
-- automaticamente a cada push na `main` (mudanças só em `docs/` ou `*.md` não disparam);
-- manualmente pelo app/site do GitHub: **Actions → Deploy produção → Run workflow**, com opções de rebuild sem cache, `--pull` das imagens base e prune de imagens.
+## Segurança e rollback
 
-Deploys nunca rodam em paralelo (grupo de concorrência `production-deploy`); pushes em sequência ficam em fila.
+Antes de trocar os containers, o script:
 
-### Fluxo pelo celular
+- cria um dump transacional compactado do MySQL em
+  `/opt/hopecash/backups/deploy/` e conserva os dez mais recentes;
+- registra as imagens atuais de `api`, `web` e `retaguarda`;
+- constrói todas as novas imagens enquanto a versão anterior segue no ar;
+- restaura automaticamente as imagens anteriores se a troca ou os healthchecks
+  locais falharem.
 
-1. Code e faça merge/push na `main` (Claude Code web, GitHub mobile, Codespaces…).
-2. O push dispara o deploy sozinho.
-3. Acompanhe os logs em tempo real no app do GitHub, em **Actions**.
+O rollback de imagens não desfaz automaticamente migrations SQL. O dump
+pré-deploy é a proteção para uma restauração deliberada do banco.
 
-### Instalação do runner (uma vez, no servidor)
+O script sempre combina `docker-compose.yml` com `docker-compose.vps.yml`. Isso
+mantém o Nginx Proxy Manager no projeto Compose e impede que ele seja removido como
+órfão. Mesmo no modo `RESET_DB=1`, somente o volume MySQL é removido; certificados
+e configurações do proxy não são apagados.
 
-Pré-requisitos no servidor: `git`, `curl`, `iproute2` (`ss`) e o usuário do runner no grupo `docker` (`sudo usermod -aG docker <usuario>`).
+## Estado persistente
 
-1. No GitHub: **Settings → Actions → Runners → New self-hosted runner → Linux x64** e execute no servidor os comandos de download e `./config.sh` que a página gera.
-2. Instale como serviço para sobreviver a reboots:
+O `/opt/hopecash/.env` pertence ao VPS, tem permissão `0600` e é excluído da
+sincronização. O script preserva credenciais do MySQL, JWT, Groq, Azure Speech e
+demais integrações. Por padrão, as portas internas de MySQL, API, app e retaguarda
+ficam vinculadas a `127.0.0.1`; somente o Nginx Proxy Manager publica 80/443.
 
-   ```bash
-   cd ~/actions-runner
-   sudo ./svc.sh install
-   sudo ./svc.sh start
-   ```
+As opções manuais disponíveis no workflow são:
 
-3. Confirme que o runner aparece como **Idle** na página de Runners e dispare um **Run workflow** de teste.
+- `no_cache`: reconstrói sem cache;
+- `pull`: atualiza imagens base;
+- `prune`: remove imagens Docker sem uso depois de um deploy bem-sucedido.
 
-O runner faz o checkout do código sozinho — não é preciso `GIT_TOKEN` nem repositório clonado em `/opt/hopecash` para esse caminho (apenas o `.env` persiste lá).
+`RESET_DB` não é exposto no GitHub Actions.
 
-## `deploy.bat` (SSH a partir do PC)
+## Alternativa local
 
-```bat
-deploy.bat                     :: portas padrão 8092/3001/3306
-deploy.bat -NoCache -Pull
-deploy.bat -ResetDatabase      :: CUIDADO: apaga o volume do MySQL
-```
+[`scripts/deploy-server.ps1`](../scripts/deploy-server.ps1) continua disponível
+para operação manual via SSH. Ele termina chamando o mesmo `scripts/deploy.sh`,
+portanto usa os mesmos backups, Compose do VPS e healthchecks.
 
-Lê as credenciais de `C:\app\hopecash_private\deploy_credencial.txt` (`SERVER`, `SSH_USER`, `GIT_USERNAME`, `GIT_TOKEN`…), atualiza o clone em `/opt/hopecash` via SSH e executa o mesmo `scripts/deploy.sh` lá. Detalhes em [`scripts/deploy-server.ps1`](../scripts/deploy-server.ps1).
+## Endpoints publicados
 
-## Configuração persistente
-
-O `.env` do servidor guarda portas, URLs e segredos gerados no primeiro deploy (`MYSQL_PASSWORD`, `JWT_SECRET`…). Ele é reescrito a cada deploy **preservando os valores existentes**; para trocar um valor, edite o arquivo no servidor antes do próximo deploy ou passe a variável correspondente (`WEB_PORT`, `API_BASE_URL`, `CORS_ALLOWED_ORIGINS`…) ao `deploy.sh`. `RESET_DB=1` (ou `-ResetDatabase` no `deploy.bat`) apaga o volume do MySQL — não está exposto no workflow por segurança.
-
-## Páginas públicas para a App Store
-
-O mesmo domínio do app publica duas páginas sem exigir login:
-
-- URL de marketing: `https://hopecash.coagru.com.br/marketing/`
-- URL de suporte: `https://hopecash.coagru.com.br/suporte/`
-
-O formulário de suporte chama o endpoint público `POST /api/v1/support`. Para que ele envie mensagens reais, habilite o SMTP com as variáveis `MAIL_*` já usadas pelo backend e configure no `.env` persistente:
-
-```dotenv
-MAIL_ENABLED=true
-SUPPORT_EMAIL_TO=suporte@seudominio.com.br
-SUPPORT_EMAIL_SUBJECT_PREFIX=[HopeCash Suporte]
-SUPPORT_RATE_LIMIT_MAX=5
-SUPPORT_RATE_LIMIT_WINDOW_MINUTES=15
-```
-
-`SUPPORT_EMAIL_TO` é o destinatário dos chamados. O prefixo identifica as mensagens na caixa de entrada; os dois últimos valores limitam envios por IP e reduzem abuso. Se `SUPPORT_EMAIL_TO` estiver vazio, o backend usa `MAIL_FROM`, depois `MAIL_USER`, como alternativa.
+- App: `https://app.hopecash.tech`
+- API: `https://api.hopecash.tech`
+- Administração: `https://adm.hopecash.tech`
+- Proxy: `https://proxy.hopecash.tech`

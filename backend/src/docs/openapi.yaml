@@ -257,9 +257,9 @@ paths:
       responses: { '201': { description: Parcelas criadas } }
 
   /ai/parse-transaction:
-    post: { tags: [AI], summary: Interpreta frase falada e devolve lançamento estruturado (LLM local via Ollama), responses: { '200': { description: OK }, '503': { description: LLM indisponível } } }
+    post: { tags: [AI], summary: Interpreta frase falada e devolve lançamento estruturado (LLM via Groq), responses: { '200': { description: OK }, '503': { description: LLM indisponível } } }
   /ai/health:
-    get: { tags: [AI], summary: Estado do servidor de IA (Ollama) — versão, modelos configurados e instalados, responses: { '200': { description: 'OK (ok=false quando indisponível, nunca 5xx)' } } }
+    get: { tags: [AI], summary: Estado do serviço de IA (Groq) — modelos configurados e disponíveis, responses: { '200': { description: 'OK (ok=false quando indisponível, nunca 5xx)' } } }
   /ai/tools:
     get: { tags: [AI], summary: 'Catálogo de ferramentas financeiras da IA (nome, descrição, JSON Schema) — debug/dev, indisponível em produção', responses: { '200': { description: OK } } }
   /ai/tools/{name}:

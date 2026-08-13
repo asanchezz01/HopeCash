@@ -3,7 +3,7 @@ import { db } from '../../../db/knex.js';
 import { logger } from '../../../logger.js';
 import { addMonths, today } from '../../../utils/time.js';
 import { HttpError, notFound } from '../../../utils/httpError.js';
-import { ollama, OllamaError } from '../../ai/ollama.js';
+import { llm, LlmError } from '../../ai/llm.js';
 
 const TIP_OUTPUT_SCHEMA = {
   type: 'object',
@@ -151,7 +151,7 @@ async function buildFinancialSnapshot(userId) {
 
 const cleanSingleLine = (value) => value.replace(/\s+/g, ' ').trim();
 
-/** Gera uma dica geral ou personalizada usando somente a infraestrutura privada do Ollama. */
+/** Gera uma dica geral ou personalizada usando o Groq. */
 export async function generateTip({ userId } = {}) {
   const snapshot = userId ? await buildFinancialSnapshot(userId) : null;
   const request = snapshot
@@ -160,8 +160,8 @@ export async function generateTip({ userId } = {}) {
 
   let raw;
   try {
-    raw = await ollama.chatJson({
-      model: ollama.models.default,
+    raw = await llm.chatJson({
+      model: llm.models.default,
       format: TIP_OUTPUT_SCHEMA,
       temperature: 0.7,
       // O primeiro uso após ociosidade pode precisar recarregar o modelo.
@@ -172,8 +172,8 @@ export async function generateTip({ userId } = {}) {
       ],
     });
   } catch (err) {
-    if (!(err instanceof OllamaError)) throw err;
-    logger.warn({ err: err.message }, 'Falha ao gerar dica financeira no Ollama');
+    if (!(err instanceof LlmError)) throw err;
+    logger.warn({ err: err.message }, 'Falha ao gerar dica financeira no Groq');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'A geração de dicas está indisponível agora');
   }
 

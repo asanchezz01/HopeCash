@@ -6,7 +6,7 @@ import { validate } from '../../middleware/validate.js';
 import { syncRepo } from '../../core/syncRepo.js';
 import { HttpError } from '../../utils/httpError.js';
 import { today } from '../../utils/time.js';
-import { ollama, OllamaError } from './ollama.js';
+import { llm, LlmError } from './llm.js';
 import { tts, TtsError } from './tts.js';
 import { TOOLS, callTool } from './tools/index.js';
 import chatRoutes from './chat.routes.js';
@@ -26,14 +26,14 @@ router.use('/actions', actionsRoutes);
 router.use('/', chatRoutes);
 
 /**
- * Estado da IA: servidor Ollama acessível e modelos configurados/instalados.
+ * Estado da IA: Groq acessível e modelos configurados/disponíveis.
  * O app usa para esconder recursos de IA quando indisponível; nunca falha.
  */
 router.get('/health', async (_req, res) => {
-  res.json({ data: await ollama.health() });
+  res.json({ data: await llm.health() });
 });
 
-/** Sintetiza uma resposta da Hope usando somente a infraestrutura privada. */
+/** Sintetiza uma resposta da Hope por Azure Speech. */
 router.post('/speech', validate(z.object({
   text: z.string().trim().min(1).max(config.tts.maxChars),
 })), async (req, res) => {
@@ -43,7 +43,7 @@ router.post('/speech', validate(z.object({
       'content-type': audio.contentType,
       'content-length': String(audio.bytes.length),
       'cache-control': 'private, no-store',
-      'x-hope-voice': 'hope-velvet',
+      'x-hope-voice': config.tts.voice,
       'x-tts-provider': audio.provider,
     });
     res.send(audio.bytes);
@@ -76,8 +76,8 @@ router.post('/parse-transaction', validate(z.object({
 
   let raw;
   try {
-    raw = await ollama.chatJson({
-      model: ollama.models.fast,
+    raw = await llm.chatJson({
+      model: llm.models.fast,
       format: PARSE_OUTPUT_SCHEMA,
       temperature: 0,
       messages: [
@@ -86,14 +86,14 @@ router.post('/parse-transaction', validate(z.object({
       ],
     });
   } catch (err) {
-    if (!(err instanceof OllamaError)) throw err;
-    logger.warn({ err: err.message }, 'Falha ao consultar o Ollama');
+    if (!(err instanceof LlmError)) throw err;
+    logger.warn({ err: err.message }, 'Falha ao consultar o Groq');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'Serviço de interpretação indisponível');
   }
 
   const parsed = parseOutputSchema.safeParse(raw);
   if (!parsed.success) {
-    logger.warn({ raw }, 'Resposta do Ollama fora do formato esperado');
+    logger.warn({ raw }, 'Resposta do Groq fora do formato esperado');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'Não foi possível interpretar a frase');
   }
 

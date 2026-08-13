@@ -1,7 +1,7 @@
 import { logger } from '../../logger.js';
 import { syncRepo } from '../../core/syncRepo.js';
 import { today } from '../../utils/time.js';
-import { ollama } from './ollama.js';
+import { llm } from './llm.js';
 import { callTool } from './tools/index.js';
 import {
   PARSE_OUTPUT_SCHEMA,
@@ -14,7 +14,7 @@ import {
  * Rota determinística de lançamento: frases inequívocas de "lançar um gasto"
  * passam pela MESMA extração estruturada da rota /ai/parse-transaction
  * (structured outputs + ids reais do usuário) e viram direto uma proposta de
- * create_transaction. No tool-calling livre o qwen3:8b inventa nomes de conta
+ * create_transaction. No tool-calling livre um modelo pode inventar nomes de conta
  * e categoria que o usuário nunca citou; a extração restrita aos ids reais
  * não tem esse caminho de falha. Qualquer dúvida (parse indisponível,
  * confiança baixa, parcelamento) cai para o loop normal do agente.
@@ -74,8 +74,8 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
       syncRepo.list('credit_cards', auth, { limit: 50, filters: { is_active: 1 } }),
     ]);
 
-    const raw = await ollama.chatJson({
-      model: ollama.models.fast,
+    const raw = await llm.chatJson({
+      model: llm.models.fast,
       format: PARSE_OUTPUT_SCHEMA,
       temperature: 0,
       timeoutMs: PARSE_TIMEOUT_MS,

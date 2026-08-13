@@ -1,7 +1,7 @@
 /**
  * Chat com a assistente Hope (Etapa 2 do AI_ROADMAP).
  *
- * Conversas vivem apenas no servidor (o chat depende do Ollama, logo só
+ * Conversas vivem apenas no servidor (o chat depende do provedor LLM, logo só
  * funciona online) — por isso NÃO entram no registro de sincronização.
  * Exclusão é definitiva (hard delete), alinhada à premissa LGPD.
  */

@@ -1,4 +1,5 @@
 import { afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
+import { config } from '../src/config.js';
 import { normalizeSpeechText } from '../src/modules/ai/tts.js';
 import { auth, makeApp, registerUser } from './helpers.js';
 
@@ -8,11 +9,29 @@ let token;
 beforeAll(async () => {
   api = await makeApp();
   token = (await registerUser(api)).access_token;
+  config.tts.apiKey = 'test-azure-key';
+  config.tts.region = 'brazilsouth';
 });
 
-afterEach(() => vi.unstubAllGlobals());
+afterEach(() => {
+  config.tts.enabled = true;
+  vi.unstubAllGlobals();
+});
 
-describe('Voz da Hope — TTS privado', () => {
+describe('Voz da Hope — Azure Speech', () => {
+  it('não consulta o TTS quando a voz está desabilitada', async () => {
+    config.tts.enabled = false;
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    const res = await api.post('/api/v1/ai/speech').set(auth(token))
+      .send({ text: 'Teste' });
+
+    expect(res.status).toBe(503);
+    expect(res.body.error.code).toBe('TTS_UNAVAILABLE');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
   it('remove markdown antes da síntese', () => {
     expect(normalizeSpeechText('## Saldo\n- **Total:** [R$ 10](https://local)'))
       .toBe('Saldo Total: 10 reais');
@@ -32,7 +51,7 @@ describe('Voz da Hope — TTS privado', () => {
       .toBe('1 real e 1 centavo e 50 centavos');
   });
 
-  it('usa o perfil feminino Hope Velvet no Kokoro', async () => {
+  it('usa SSML e a voz neural brasileira configurada no Azure', async () => {
     const audio = Uint8Array.from([73, 68, 51, 4, 5, 6]);
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
@@ -46,55 +65,18 @@ describe('Voz da Hope — TTS privado', () => {
 
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toContain('audio/mpeg');
-    expect(res.headers['x-hope-voice']).toBe('hope-velvet');
-    expect(res.headers['x-tts-provider']).toBe('kokoro');
+    expect(res.headers['x-hope-voice']).toBe('pt-BR-ThalitaMultilingualNeural');
+    expect(res.headers['x-tts-provider']).toBe('azure');
     expect(Buffer.compare(res.body, Buffer.from(audio))).toBe(0);
     const [url, options] = fetchMock.mock.calls[0];
-    expect(new URL(String(url)).pathname).toBe('/v1/audio/speech');
-    expect(JSON.parse(options.body)).toEqual({
-      model: 'kokoro', voice: 'pf_dora(2)+af_bella(1)', input: 'Seu saldo é 10 reais.',
-      response_format: 'mp3', speed: 0.96,
-    });
+    expect(new URL(String(url)).pathname).toBe('/cognitiveservices/v1');
+    expect(options.headers['Ocp-Apim-Subscription-Key']).toBeTruthy();
+    expect(options.headers['X-Microsoft-OutputFormat']).toContain('mp3');
+    expect(options.body).toContain('<voice name="pt-BR-ThalitaMultilingualNeural">');
+    expect(options.body).toContain('Seu saldo é 10 reais.');
   });
 
-  it('cai no Coqui local quando a voz principal está indisponível', async () => {
-    const audio = Uint8Array.from([82, 73, 70, 70, 4, 5, 6]);
-    const fetchMock = vi.fn()
-      .mockRejectedValueOnce(new Error('ECONNREFUSED'))
-      .mockResolvedValueOnce({
-        ok: true,
-        headers: new Headers({ 'content-type': 'audio/wav' }),
-        arrayBuffer: async () => audio.buffer,
-      });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const res = await api.post('/api/v1/ai/speech').set(auth(token))
-      .send({ text: 'Teste da contingência' });
-
-    expect(res.status).toBe(200);
-    expect(res.headers['x-tts-provider']).toBe('coqui');
-    expect(new URL(String(fetchMock.mock.calls[1][0])).pathname).toBe('/fale');
-    expect(JSON.parse(fetchMock.mock.calls[1][1].body)).toEqual({ texto: 'Teste da contingência' });
-  });
-
-  it('solicita WAV para aplicar a curva interrogativa', async () => {
-    const audio = Uint8Array.from([82, 73, 70, 70, 1, 2, 3]);
-    const fetchMock = vi.fn().mockResolvedValue({
-      ok: true,
-      headers: new Headers({ 'content-type': 'audio/wav' }),
-      arrayBuffer: async () => audio.buffer,
-    });
-    vi.stubGlobal('fetch', fetchMock);
-
-    const res = await api.post('/api/v1/ai/speech').set(auth(token))
-      .send({ text: 'Você gostaria que eu detalhasse por categoria?' });
-
-    expect(res.status).toBe(200);
-    expect(res.headers['content-type']).toContain('audio/wav');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).response_format).toBe('wav');
-  });
-
-  it('responde 503 quando a voz local está indisponível', async () => {
+  it('responde 503 quando o Azure Speech está indisponível', async () => {
     vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('ECONNREFUSED')));
     const res = await api.post('/api/v1/ai/speech').set(auth(token))
       .send({ text: 'Teste de voz' });

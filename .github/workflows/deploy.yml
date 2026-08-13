@@ -1,4 +1,4 @@
-name: Deploy produção
+name: Deploy VPS
 
 on:
   push:
@@ -17,26 +17,112 @@ on:
         type: boolean
         default: false
       prune:
-        description: "docker image prune -f após o deploy"
+        description: "Remover imagens Docker não utilizadas após o deploy"
         type: boolean
         default: false
 
-# Deploys nunca rodam em paralelo; um push novo espera o anterior terminar.
+permissions:
+  contents: read
+
+# Um deploy novo aguarda o anterior; nunca há duas alterações simultâneas no VPS.
 concurrency:
-  group: production-deploy
+  group: production-vps
   cancel-in-progress: false
+
+env:
+  VPS_HOST: 179.198.127.58
+  VPS_PORT: "22"
+  VPS_USER: root
+  VPS_PATH: /opt/hopecash
+  # Chave pública do host validada durante o provisionamento do VPS.
+  VPS_HOST_KEY: >-
+    179.198.127.58 ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIN4EMCWZF4lGkMgK7nStwuPEI3n5cDjYAsxt+/83F0Ht
 
 jobs:
   deploy:
-    runs-on: self-hosted
+    name: Publicar no VPS
+    runs-on: ubuntu-latest
     timeout-minutes: 45
-    steps:
-      - uses: actions/checkout@v4
+    environment:
+      name: production
+      url: https://app.hopecash.tech
 
-      - name: Publicar containers
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Validar arquivos de deploy
+        run: |
+          bash -n scripts/deploy.sh
+          docker compose \
+            -f docker-compose.yml \
+            -f docker-compose.vps.yml \
+            config --quiet
+
+      - name: Configurar SSH
         env:
-          ENV_FILE: /opt/hopecash/.env
+          VPS_SSH_PRIVATE_KEY: ${{ secrets.VPS_SSH_PRIVATE_KEY }}
+        run: |
+          if [ -z "$VPS_SSH_PRIVATE_KEY" ]; then
+            echo "Secret VPS_SSH_PRIVATE_KEY não configurado" >&2
+            exit 1
+          fi
+          install -d -m 700 ~/.ssh
+          printf '%s\n' "$VPS_SSH_PRIVATE_KEY" > ~/.ssh/id_ed25519
+          chmod 600 ~/.ssh/id_ed25519
+          printf '%s\n' "$VPS_HOST_KEY" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      - name: Testar acesso ao VPS
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            'test -f /opt/hopecash/.env && docker compose version >/dev/null'
+
+      - name: Sincronizar versão do repositório
+        run: |
+          rsync -az --delete \
+            --exclude='.git/' \
+            --exclude='.env' \
+            --exclude='.env.*' \
+            --exclude='backend/.env' \
+            --exclude='backend/.env_*' \
+            --exclude='backend/uploads/' \
+            --exclude='backups/' \
+            --exclude='graphify-out/' \
+            --exclude='secret/' \
+            -e "ssh -p $VPS_PORT" \
+            ./ "$VPS_USER@$VPS_HOST:$VPS_PATH/"
+
+      - name: Construir e publicar containers
+        env:
           NO_CACHE: ${{ inputs.no_cache && '1' || '0' }}
           PULL: ${{ inputs.pull && '1' || '0' }}
           PRUNE: ${{ inputs.prune && '1' || '0' }}
-        run: bash scripts/deploy.sh
+          BUILD_REF: ${{ github.sha }}
+        run: |
+          ssh -p "$VPS_PORT" "$VPS_USER@$VPS_HOST" \
+            "cd '$VPS_PATH' && \
+             ENV_FILE='$VPS_PATH/.env' \
+             COMPOSE_FILES='docker-compose.yml docker-compose.vps.yml' \
+             BUILD_REF='$BUILD_REF' \
+             NO_CACHE='$NO_CACHE' PULL='$PULL' PRUNE='$PRUNE' \
+             flock -n /tmp/hopecash-deploy.lock bash scripts/deploy.sh"
+
+      - name: Validar domínios públicos
+        run: |
+          curl --fail --silent --show-error --retry 10 --retry-all-errors \
+            --retry-delay 3 https://api.hopecash.tech/api/v1/health >/dev/null
+          curl --fail --silent --show-error --retry 10 --retry-all-errors \
+            --retry-delay 3 https://app.hopecash.tech/ >/dev/null
+          curl --fail --silent --show-error --retry 10 --retry-all-errors \
+            --retry-delay 3 https://adm.hopecash.tech/ >/dev/null
+
+      - name: Resumo
+        run: |
+          {
+            echo "## Deploy concluído"
+            echo ""
+            echo "- Commit: \`${GITHUB_SHA}\`"
+            echo "- VPS: \`${VPS_HOST}\`"
+            echo "- App, API e administração responderam via HTTPS."
+          } >> "$GITHUB_STEP_SUMMARY"

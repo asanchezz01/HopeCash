@@ -7,7 +7,7 @@ import { processDueReminders, todayInTimezone } from '../src/modules/push/servic
 import { processTips } from '../src/modules/push/services/tipService.js';
 import { processFinancialInsights } from '../src/modules/push/services/financialInsightService.js';
 import { dispatchPendingDeliveries } from '../src/modules/push/services/deliveryService.js';
-import { ollama } from '../src/modules/ai/ollama.js';
+import { llm } from '../src/modules/ai/llm.js';
 
 let api;
 let fakeProvider;
@@ -141,7 +141,7 @@ describe('Avisos de vencimento — controlados pela regra de automação', () =>
 describe('Dicas da Hope — worker automático', () => {
   it('gera dica geral por IA com saída pronta para revisão', async () => {
     const { access_token: superToken } = await loginSuperuser(api);
-    const chat = vi.spyOn(ollama, 'chatJson').mockResolvedValueOnce({
+    const chat = vi.spyOn(llm, 'chatJson').mockResolvedValueOnce({
       title: 'Comece pelo que cabe hoje',
       body: 'Escolha uma despesa recorrente e confirme se ela ainda entrega valor antes da próxima cobrança.',
     });
@@ -169,7 +169,7 @@ describe('Dicas da Hope — worker automático', () => {
       category_id: category.id, competence_date: `${month}-10`, status: 'paid',
       account_id: await accountFor(user.access_token),
     });
-    const chat = vi.spyOn(ollama, 'chatJson').mockResolvedValueOnce({
+    const chat = vi.spyOn(llm, 'chatJson').mockResolvedValueOnce({
       title: 'Dê espaço ao que importa',
       body: 'Revise a categoria que mais pesa no mês e defina um limite simples para a próxima semana.',
     });

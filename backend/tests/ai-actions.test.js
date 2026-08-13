@@ -15,10 +15,11 @@ let authContext;
 
 const streamBody = (chunks) => (async function* () {
   const enc = new TextEncoder();
-  for (const chunk of chunks) yield enc.encode(`${JSON.stringify(chunk)}\n`);
+  for (const chunk of chunks) yield enc.encode(`data: ${JSON.stringify(chunk)}\n\n`);
+  yield enc.encode('data: [DONE]\n\n');
 })();
 
-const ollamaStream = (...calls) => {
+const groqStream = (...calls) => {
   let index = 0;
   return vi.fn().mockImplementation(async () => ({
     ok: true,
@@ -27,13 +28,13 @@ const ollamaStream = (...calls) => {
 };
 
 const toolRound = (name, args) => [
-  { message: { role: 'assistant', content: '', tool_calls: [{ function: { name, arguments: args } }] }, done: false },
-  { message: { role: 'assistant', content: '' }, done: true },
+  { choices: [{ delta: { role: 'assistant', tool_calls: [{ index: 0, id: `call_${name}`, type: 'function', function: { name, arguments: JSON.stringify(args) } }] }, finish_reason: null }] },
+  { choices: [{ delta: {}, finish_reason: 'tool_calls' }] },
 ];
 
 const textRound = (text) => [
-  { message: { role: 'assistant', content: text }, done: false },
-  { message: { role: 'assistant', content: '' }, done: true },
+  { choices: [{ delta: { role: 'assistant', content: text }, finish_reason: null }] },
+  { choices: [{ delta: {}, finish_reason: 'stop' }] },
 ];
 
 const eventData = (body, event) => JSON.parse(body.split(`event: ${event}\ndata: `)[1].split('\n')[0]);
@@ -92,7 +93,7 @@ describe('Ações da Hope — confirmação em duas fases', () => {
     };
     const fetchMock = vi.fn().mockResolvedValue({
       ok: true,
-      json: async () => ({ message: { content: JSON.stringify(parseOut) } }),
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(parseOut) } }] }),
     });
     vi.stubGlobal('fetch', fetchMock);
 
@@ -125,7 +126,7 @@ describe('Ações da Hope — confirmação em duas fases', () => {
 
   it('extração indisponível cai para o loop do agente e ainda propõe', async () => {
     // 1ª chamada (parse): resposta sem .json() → erro tratado, rota cai para o loop.
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       textRound('consumida pela tentativa de extração'),
       toolRound('create_transaction', {
         type: 'expense', description: 'Padaria', amount: 30,
@@ -143,7 +144,7 @@ describe('Ações da Hope — confirmação em duas fases', () => {
   });
 
   it('recusar preserva os dados e fica registrado no histórico', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolRound('create_category', { name: 'Pets', type: 'expense' }),
       textRound('A categoria está pronta para sua revisão.'),
     ));
@@ -161,7 +162,7 @@ describe('Ações da Hope — confirmação em duas fases', () => {
   });
 
   it('proposta expirada não pode ser confirmada', async () => {
-    vi.stubGlobal('fetch', ollamaStream(
+    vi.stubGlobal('fetch', groqStream(
       toolRound('create_goal', { name: 'Viagem', target_amount: 5000 }),
       textRound('Confira a proposta.'),
     ));

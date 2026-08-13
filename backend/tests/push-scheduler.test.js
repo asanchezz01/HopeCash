@@ -5,7 +5,7 @@ import { _setPushProviderForTests } from '../src/modules/push/providers/index.js
 import { FakePushProvider } from '../src/modules/push/providers/fakePushProvider.js';
 import { runPushSchedulerTick, startPushScheduler, stopPushScheduler } from '../src/modules/push/scheduler.js';
 import { sendCampaignNow } from '../src/modules/push/services/campaignService.js';
-import { ollama } from '../src/modules/ai/ollama.js';
+import { llm } from '../src/modules/ai/llm.js';
 
 let api;
 let fakeProvider;
@@ -42,7 +42,7 @@ describe('Scheduler — campanhas agendadas sobrevivem a um "reinício"', () => 
     await db('push_campaigns').where({ id }).update({ status: 'scheduled', scheduled_at: '2020-01-01 00:00:00.000' });
 
     // "Reinício": dois ciclos do worker, como se o processo tivesse caído e voltado no meio do caminho.
-    const chat = vi.spyOn(ollama, 'chatJson').mockResolvedValue({
+    const chat = vi.spyOn(llm, 'chatJson').mockResolvedValue({
       title: 'Dica personalizada do scheduler',
       body: 'Revise uma categoria relevante do seu mês e escolha uma ação simples para esta semana.',
     });

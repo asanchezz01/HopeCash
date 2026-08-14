@@ -126,7 +126,9 @@ jobs:
           releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
           tracks: ${{ env.PLAY_TRACK }}
           status: ${{ env.PLAY_RELEASE_STATUS }}
-          changesNotSentForReview: ${{ env.PLAY_RELEASE_STATUS == 'draft' }}
+          # Sem changesNotSentForReview: enquanto o app nao tiver uma versao ja
+          # revisada, o Google envia as alteracoes para revisao automaticamente
+          # e rejeita o commit da edicao se o parametro for informado.
 
       - name: Summary
         run: |

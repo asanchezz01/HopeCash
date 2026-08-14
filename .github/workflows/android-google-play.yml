@@ -1,0 +1,130 @@
+name: Android Google Play
+
+on:
+  workflow_dispatch:
+    inputs:
+      track:
+        description: "Faixa de publicação no Google Play"
+        type: choice
+        required: true
+        default: internal
+        options:
+          - internal
+          - alpha
+          - beta
+          - production
+      release_status:
+        description: "Publicar agora ou apenas criar um rascunho"
+        type: choice
+        required: true
+        default: completed
+        options:
+          - completed
+          - draft
+
+permissions:
+  contents: read
+
+concurrency:
+  group: android-google-play-${{ inputs.track }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-publish:
+    name: Build and publish Android App Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    environment:
+      name: google-play-${{ inputs.track }}
+
+    defaults:
+      run:
+        working-directory: app
+
+    env:
+      ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+      ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+      ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+      ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+      GOOGLE_PLAY_SERVICE_ACCOUNT_JSON: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Java
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Validate publishing credentials
+        run: |
+          test -n "$ANDROID_KEYSTORE_BASE64"
+          test -n "$ANDROID_KEYSTORE_PASSWORD"
+          test -n "$ANDROID_KEY_ALIAS"
+          test -n "$ANDROID_KEY_PASSWORD"
+          test -n "$GOOGLE_PLAY_SERVICE_ACCOUNT_JSON"
+
+      - name: Configure Android upload key
+        run: |
+          keystore_path="$RUNNER_TEMP/hopecash-upload.jks"
+          printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 --decode > "$keystore_path"
+          test -s "$keystore_path"
+          chmod 600 "$keystore_path"
+          echo "ANDROID_KEYSTORE_PATH=$keystore_path" >> "$GITHUB_ENV"
+
+      - name: Set Android version code
+        run: |
+          version_code=$((GITHUB_RUN_NUMBER * 100 + GITHUB_RUN_ATTEMPT))
+          test "$version_code" -le 2100000000
+          echo "ANDROID_VERSION_CODE=$version_code" >> "$GITHUB_ENV"
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Build signed App Bundle
+        run: >-
+          flutter build appbundle --release
+          --build-number="$ANDROID_VERSION_CODE"
+          --dart-define=API_BASE_URL=https://api.hopecash.tech
+
+      - name: Verify App Bundle signature
+        run: jarsigner -verify -verbose -certs build/app/outputs/bundle/release/app-release.aab
+
+      - name: Upload App Bundle artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: HopeCash-android-${{ github.run_number }}-${{ github.run_attempt }}
+          path: app/build/app/outputs/bundle/release/app-release.aab
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Publish to Google Play
+        # r0adkll/upload-google-play v1.1.5
+        uses: r0adkll/upload-google-play@e738b9dd8f2476ea806d921b64aacd24f34515a5
+        with:
+          serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
+          packageName: br.com.newhope.hopecash
+          releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
+          tracks: ${{ inputs.track }}
+          status: ${{ inputs.release_status }}
+          changesNotSentForReview: ${{ inputs.release_status == 'draft' }}
+
+      - name: Summary
+        run: |
+          {
+            echo "## Google Play"
+            echo ""
+            echo "- Pacote: \`br.com.newhope.hopecash\`"
+            echo "- Version code: \`$ANDROID_VERSION_CODE\`"
+            echo "- Faixa: \`${{ inputs.track }}\`"
+            echo "- Status: \`${{ inputs.release_status }}\`"
+          } >> "$GITHUB_STEP_SUMMARY"

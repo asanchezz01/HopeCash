@@ -1,6 +1,12 @@
 name: Android Google Play
 
 on:
+  # Envio automático ao publicar uma tag de versão (ex.: v1.4.0). Sempre usa a
+  # faixa interna com status completed; para as demais faixas, use o disparo
+  # manual abaixo.
+  push:
+    tags:
+      - "v*"
   workflow_dispatch:
     inputs:
       track:
@@ -26,7 +32,7 @@ permissions:
   contents: read
 
 concurrency:
-  group: android-google-play-${{ inputs.track }}
+  group: android-google-play-${{ inputs.track || 'internal' }}
   cancel-in-progress: false
 
 jobs:
@@ -35,13 +41,17 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     environment:
-      name: google-play-${{ inputs.track }}
+      name: google-play-${{ inputs.track || 'internal' }}
 
     defaults:
       run:
         working-directory: app
 
     env:
+      # O contexto `inputs` fica vazio quando o gatilho é a tag, por isso os
+      # valores caem no padrão da faixa interna.
+      PLAY_TRACK: ${{ inputs.track || 'internal' }}
+      PLAY_RELEASE_STATUS: ${{ inputs.release_status || 'completed' }}
       ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
       ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
       ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
@@ -114,9 +124,9 @@ jobs:
           serviceAccountJsonPlainText: ${{ secrets.GOOGLE_PLAY_SERVICE_ACCOUNT_JSON }}
           packageName: br.com.newhope.hopecash
           releaseFiles: app/build/app/outputs/bundle/release/app-release.aab
-          tracks: ${{ inputs.track }}
-          status: ${{ inputs.release_status }}
-          changesNotSentForReview: ${{ inputs.release_status == 'draft' }}
+          tracks: ${{ env.PLAY_TRACK }}
+          status: ${{ env.PLAY_RELEASE_STATUS }}
+          changesNotSentForReview: ${{ env.PLAY_RELEASE_STATUS == 'draft' }}
 
       - name: Summary
         run: |
@@ -125,6 +135,7 @@ jobs:
             echo ""
             echo "- Pacote: \`br.com.newhope.hopecash\`"
             echo "- Version code: \`$ANDROID_VERSION_CODE\`"
-            echo "- Faixa: \`${{ inputs.track }}\`"
-            echo "- Status: \`${{ inputs.release_status }}\`"
+            echo "- Faixa: \`$PLAY_TRACK\`"
+            echo "- Status: \`$PLAY_RELEASE_STATUS\`"
+            echo "- Origem: \`$GITHUB_REF\`"
           } >> "$GITHUB_STEP_SUMMARY"

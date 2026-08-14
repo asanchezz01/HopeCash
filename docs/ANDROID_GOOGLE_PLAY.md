@@ -2,8 +2,17 @@
 
 O workflow `.github/workflows/android-google-play.yml` gera um Android App
 Bundle assinado e o envia para o pacote `br.com.newhope.hopecash` no Google
-Play. Ele é executado manualmente em **Actions > Android Google Play > Run
-workflow**.
+Play.
+
+Há duas formas de acioná-lo:
+
+- **Tag de versão**: ao publicar uma tag `v*` (ex.: `v1.4.0`), o envio acontece
+  automaticamente na faixa `internal` com status `completed`.
+- **Manualmente**, em **Actions > Android Google Play > Run workflow**, quando
+  for preciso escolher outra faixa ou criar apenas um rascunho.
+
+Um push na `main` **não** dispara este workflow — apenas o `Deploy VPS`, que
+publica backend e web e não envia nada ao Google Play.
 
 ## Segredos necessários
 

@@ -1,7 +1,7 @@
 # HopeCash — IA & MCP: Plano de Implementação
 
 > Roadmap para transformar o HopeCash em um app com assistente financeiro inteligente, usando o
-> Groq (LLM) e Azure Speech (voz), com uma arquitetura de ferramentas compatível com MCP.
+> Groq com fallback para Cerebras (LLM) e Azure Speech (voz), com uma arquitetura de ferramentas compatível com MCP.
 > Cada etapa é deployável sozinha e entrega valor incremental.
 
 ## 1. Visão
@@ -13,7 +13,7 @@ Um assistente financeiro ("**Hope**") embutido no app que:
 - **Gera insights proativos** — resumo mensal, gastos fora do padrão, orçamento estourando, contas a vencer.
 - **Automatiza classificação** — categorização de importações, notificações bancárias sem regra.
 
-**Premissa de privacidade atual**: somente os fatos necessários à resposta são enviados ao Groq;
+**Premissa de privacidade atual**: somente os fatos necessários à resposta são enviados à Cerebras ou ao Groq;
 o texto sintetizado é enviado ao Azure Speech. Escritas continuam locais, auditadas e dependem de
 confirmação humana. IA é opt-out por usuário (Configurações).
 
@@ -21,11 +21,11 @@ confirmação humana. IA é opt-out por usuário (Configurações).
 
 | Peça | Estado |
 |---|---|
-| Cliente LLM | `modules/ai/llm.js` — Groq: chat, chatJson, chatStream, tools, health; retry, timeouts, erros tipados |
+| Cliente LLM | `modules/ai/llm.js` — Groq → Cerebras: chat, chatJson, chatStream, tools, health; retry, rate-limit e fallback |
 | `POST /ai/parse-transaction` | Voz → lançamento estruturado com ids reais do usuário; nunca grava; fallback local no app |
-| `GET /ai/health` | Estado do Groq (app e retaguarda), com card de alerta no dashboard da retaguarda |
+| `GET /ai/health` | Estado dos provedores LLM (app e retaguarda), com card de alerta no dashboard da retaguarda |
 | Toolbox somente-leitura | `modules/ai/tools/` — 13 tools (saldos, lançamentos, orçamento, fluxo de caixa, faturas, metas, dívidas, investimentos, resumo do mês, busca); `GET/POST /ai/tools*` para debug (não-prod) |
-| Config | `GROQ_API_KEY`, `GROQ_MODEL`/`_CHAT`/`_FAST`; Azure Speech para TTS |
+| Config | `CEREBRAS_API_KEY`, `GROQ_API_KEY` e modelos por provedor; Azure Speech para TTS |
 | Camada de dados segura | `syncRepo` — escopo user/family forçado + auditoria em toda escrita |
 | App | `AiApi` (Dio), `voice_add_sheet` com confirmação via formulário pré-preenchido |
 | Dados prontos p/ IA | `import_items.suggested_category_id`, `notifications` (tipos `unusual_expense`, `budget_exceeded`…), `ocr_data` em anexos |
@@ -40,6 +40,15 @@ confirmação humana. IA é opt-out por usuário (Configurações).
   structured outputs, retry e as barreiras de confirmação/evidência existentes.
 - `AI_ENABLED=false` continua sendo o bloqueio global; e-mail, push e scheduler têm
   chaves independentes e não são habilitados junto com a Hope.
+
+### Fallback Groq → Cerebras (2026-08-14)
+
+- O cliente usa `openai/gpt-oss-120b` no Groq como primeira opção e preserva o
+  `gpt-oss-120b` da Cerebras como fallback de mesma família/qualidade.
+- Rate limits respeitam `Retry-After`; após uma nova falha, quota, timeout ou
+  indisponibilidade, a requisição é refeita na Cerebras.
+- `LLM_MAX_COMPLETION_TOKENS` limita a reserva de saída (padrão: 1200), reduzindo
+  pressão de TPM sem cortar o contexto enviado ao modelo.
 
 ## 3. Arquitetura alvo
 

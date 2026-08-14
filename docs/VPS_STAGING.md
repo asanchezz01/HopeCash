@@ -48,19 +48,23 @@ docker compose --env-file .env \
   -f docker-compose.yml -f docker-compose.vps.yml up -d
 ```
 
-`AI_ENABLED=false` é um bloqueio do backend: o cliente Groq recusa chat,
+`AI_ENABLED=false` é um bloqueio do backend: o cliente LLM recusa chat,
 interpretação e geração de dicas sem fazer requisição de rede. O
 TTS tem bloqueio equivalente e os endpoints de health devolvem
 `disabled: true`.
 
 ### Estado após a migração de IA (2026-08-13)
 
-Groq e Azure Speech foram validados e habilitados no VPS. Os efeitos externos
+Groq (primário), Cerebras (fallback) e Azure Speech compõem a configuração da
+Hope. Se o Groq responder com quota, rate limit, indisponibilidade ou erro de
+autenticação, o backend tenta a Cerebras automaticamente. Os efeitos externos
 que ainda não fazem parte deste corte permanecem bloqueados:
 
 ```dotenv
 AI_ENABLED=true
 AI_PROVIDER=groq
+CEREBRAS_API_KEY=<segredo>
+GROQ_API_KEY=<segredo>
 TTS_ENABLED=true
 TTS_PROVIDER=azure
 MAIL_ENABLED=false

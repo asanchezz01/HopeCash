@@ -76,6 +76,7 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
 
     const raw = await llm.chatJson({
       model: llm.models.fast,
+      modelKey: 'fast',
       format: PARSE_OUTPUT_SCHEMA,
       temperature: 0,
       timeoutMs: PARSE_TIMEOUT_MS,

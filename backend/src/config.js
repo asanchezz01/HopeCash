@@ -1,6 +1,45 @@
 import 'dotenv/config';
+import fs from 'node:fs';
 
 const aiEnabled = process.env.AI_ENABLED !== 'false';
+
+const secret = (value, file) => {
+  if (value?.trim()) return value.trim();
+  // Testes nunca devem buscar credenciais reais no filesystem da máquina.
+  if (process.env.NODE_ENV === 'test') return '';
+  if (!file?.trim()) return '';
+  try { return fs.readFileSync(file.trim(), 'utf8').trim(); } catch { return ''; }
+};
+
+const cerebras = {
+  id: 'cerebras',
+  url: (process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1').replace(/\/+$/, ''),
+  apiKey: secret(process.env.CEREBRAS_API_KEY, process.env.CEREBRAS_API_KEY_FILE),
+  timeoutMs: Number(process.env.CEREBRAS_TIMEOUT_MS || 30_000),
+  reasoningEffort: process.env.CEREBRAS_REASONING_EFFORT || 'low',
+  models: {
+    default: process.env.CEREBRAS_MODEL || 'gpt-oss-120b',
+    chat: process.env.CEREBRAS_MODEL_CHAT || process.env.CEREBRAS_MODEL || 'gpt-oss-120b',
+    fast: process.env.CEREBRAS_MODEL_FAST || process.env.CEREBRAS_MODEL || 'gpt-oss-120b',
+  },
+};
+
+const groq = {
+  id: 'groq',
+  url: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
+  apiKey: secret(process.env.GROQ_API_KEY, process.env.GROQ_API_KEY_FILE),
+  timeoutMs: Number(process.env.GROQ_TIMEOUT_MS || 30_000),
+  reasoningEffort: process.env.GROQ_REASONING_EFFORT || 'low',
+  models: {
+    default: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+    chat: process.env.GROQ_MODEL_CHAT || process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
+    fast: process.env.GROQ_MODEL_FAST || 'openai/gpt-oss-20b',
+  },
+};
+
+const requestedProvider = (process.env.AI_PROVIDER || 'groq').toLowerCase();
+const providerOrder = requestedProvider === 'cerebras' ? [cerebras, groq] : [groq, cerebras];
+const primaryProvider = providerOrder.find((provider) => provider.apiKey) ?? providerOrder[0];
 
 export const config = {
   env: process.env.NODE_ENV || 'development',
@@ -15,19 +54,15 @@ export const config = {
     // Chave operacional para ambientes que devem manter a Hope totalmente
     // inativa. O bloqueio também é aplicado nos clientes LLM e TTS.
     enabled: aiEnabled,
-    provider: process.env.AI_PROVIDER || 'groq',
+    provider: requestedProvider,
   },
   llm: {
-    url: (process.env.GROQ_BASE_URL || 'https://api.groq.com/openai/v1').replace(/\/+$/, ''),
-    apiKey: process.env.GROQ_API_KEY || '',
-    timeoutMs: Number(process.env.GROQ_TIMEOUT_MS || 30_000),
-    reasoningEffort: process.env.GROQ_REASONING_EFFORT || 'low',
-    // Modelo por tarefa: chat e conteúdo no 120B; extração no 20B.
-    models: {
-      default: process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-      chat: process.env.GROQ_MODEL_CHAT || process.env.GROQ_MODEL || 'openai/gpt-oss-120b',
-      fast: process.env.GROQ_MODEL_FAST || 'openai/gpt-oss-20b',
-    },
+    // A lista é ordenada pelo provedor primário. Provedores sem chave são
+    // ignorados em runtime; assim uma instalação só com Groq continua válida.
+    providers: providerOrder,
+    models: primaryProvider.models,
+    maxCompletionTokens: Number(process.env.LLM_MAX_COMPLETION_TOKENS || 1_200),
+    retryMaxWaitMs: Number(process.env.LLM_RETRY_MAX_WAIT_MS || 15_000),
   },
   tts: {
     enabled: aiEnabled && process.env.TTS_ENABLED !== 'false',

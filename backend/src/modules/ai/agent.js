@@ -203,6 +203,7 @@ async function streamOnce({ messages, tools, onDelta }) {
   const message = { role: 'assistant', content: '', tool_calls: [] };
   const stream = llm.chatStream({
     model: llm.models.chat,
+    modelKey: 'chat',
     messages,
     tools,
     temperature: 0.3,

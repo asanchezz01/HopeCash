@@ -151,7 +151,7 @@ async function buildFinancialSnapshot(userId) {
 
 const cleanSingleLine = (value) => value.replace(/\s+/g, ' ').trim();
 
-/** Gera uma dica geral ou personalizada usando o Groq. */
+/** Gera uma dica geral ou personalizada usando o provedor LLM disponível. */
 export async function generateTip({ userId } = {}) {
   const snapshot = userId ? await buildFinancialSnapshot(userId) : null;
   const request = snapshot
@@ -162,6 +162,7 @@ export async function generateTip({ userId } = {}) {
   try {
     raw = await llm.chatJson({
       model: llm.models.default,
+      modelKey: 'default',
       format: TIP_OUTPUT_SCHEMA,
       temperature: 0.7,
       // O primeiro uso após ociosidade pode precisar recarregar o modelo.
@@ -173,7 +174,7 @@ export async function generateTip({ userId } = {}) {
     });
   } catch (err) {
     if (!(err instanceof LlmError)) throw err;
-    logger.warn({ err: err.message }, 'Falha ao gerar dica financeira no Groq');
+    logger.warn({ err: err.message }, 'Falha ao gerar dica financeira no LLM');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'A geração de dicas está indisponível agora');
   }
 

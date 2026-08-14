@@ -78,6 +78,7 @@ router.post('/parse-transaction', validate(z.object({
   try {
     raw = await llm.chatJson({
       model: llm.models.fast,
+      modelKey: 'fast',
       format: PARSE_OUTPUT_SCHEMA,
       temperature: 0,
       messages: [
@@ -87,13 +88,13 @@ router.post('/parse-transaction', validate(z.object({
     });
   } catch (err) {
     if (!(err instanceof LlmError)) throw err;
-    logger.warn({ err: err.message }, 'Falha ao consultar o Groq');
+    logger.warn({ err: err.message }, 'Falha ao consultar os provedores LLM');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'Serviço de interpretação indisponível');
   }
 
   const parsed = parseOutputSchema.safeParse(raw);
   if (!parsed.success) {
-    logger.warn({ raw }, 'Resposta do Groq fora do formato esperado');
+    logger.warn({ raw }, 'Resposta do LLM fora do formato esperado');
     throw new HttpError(503, 'AI_UNAVAILABLE', 'Não foi possível interpretar a frase');
   }
 

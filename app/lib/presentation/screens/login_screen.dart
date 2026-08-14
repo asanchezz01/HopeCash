@@ -4,7 +4,9 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show AutofillHints, TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import '../../core/design_system/design_tokens.dart';
 import '../../core/providers.dart';
+import '../../core/theme/app_theme.dart';
 import '../../data/repositories/auth_repository.dart';
 import '../widgets/brand_logo.dart';
 
@@ -164,164 +166,279 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   @override
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
+    final wide = MediaQuery.sizeOf(context).width >= HopeBreakpoints.tablet;
+    final form = _buildForm(context, scheme);
+
     return Scaffold(
       backgroundColor: scheme.surfaceContainerLowest,
-      body: Center(
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: ConstrainedBox(
-            constraints: const BoxConstraints(maxWidth: 420),
-            child: Card(
-              elevation: 8,
-              shadowColor: scheme.primary.withValues(alpha: 0.12),
-              child: Padding(
-                padding: const EdgeInsets.all(24),
-                child: Form(
-                  key: _formKey,
-                  child: AutofillGroup(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: [
-                        const Center(
-                          child: HopeCashLogo(iconSize: 58, showTagline: true),
-                        ),
-                        const SizedBox(height: 28),
-                        Text(
-                          _isRegister
-                              ? 'Crie sua conta'
-                              : 'Acesse sua carteira',
-                          style: Theme.of(context).textTheme.titleLarge,
-                        ),
-                        const SizedBox(height: 6),
-                        Text(
-                          'Organize hoje. Conquiste amanha.',
-                          style: Theme.of(context).textTheme.bodyMedium
-                              ?.copyWith(color: scheme.onSurfaceVariant),
-                        ),
-                        const SizedBox(height: 24),
-                        if (_isRegister) ...[
-                          TextFormField(
-                            controller: _name,
-                            decoration: const InputDecoration(
-                              labelText: 'Nome',
-                              prefixIcon: Icon(Icons.person_outline),
-                            ),
-                            textInputAction: TextInputAction.next,
-                            autofillHints: const [AutofillHints.name],
-                            validator: (v) => (v == null || v.trim().length < 2)
-                                ? 'Informe seu nome'
-                                : null,
-                          ),
-                          const SizedBox(height: 16),
-                        ],
-                        TextFormField(
-                          controller: _email,
-                          decoration: const InputDecoration(
-                            labelText: 'E-mail',
-                            prefixIcon: Icon(Icons.mail_outline),
-                          ),
-                          keyboardType: TextInputType.emailAddress,
-                          textInputAction: TextInputAction.next,
-                          autofillHints: const [AutofillHints.email],
-                          validator: (v) => (v == null || !v.contains('@'))
-                              ? 'E-mail inválido'
-                              : null,
-                        ),
-                        const SizedBox(height: 16),
-                        TextFormField(
-                          controller: _password,
-                          decoration: InputDecoration(
-                            labelText: 'Senha',
-                            prefixIcon: const Icon(Icons.lock_outline),
-                            suffixIcon: IconButton(
-                              icon: Icon(
-                                _obscure
-                                    ? Icons.visibility_off_outlined
-                                    : Icons.visibility_outlined,
-                              ),
-                              onPressed: () =>
-                                  setState(() => _obscure = !_obscure),
-                            ),
-                          ),
-                          obscureText: _obscure,
-                          textInputAction: TextInputAction.done,
-                          autofillHints: [
-                            _isRegister
-                                ? AutofillHints.newPassword
-                                : AutofillHints.password,
-                          ],
-                          onFieldSubmitted: (_) => _submit(),
-                          validator: (v) => (v == null || v.length < 8)
-                              ? 'Mínimo de 8 caracteres'
-                              : null,
-                        ),
-                        if (!_isRegister) ...[
-                          Align(
-                            alignment: Alignment.centerRight,
-                            child: TextButton.icon(
-                              onPressed: _loading
-                                  ? null
-                                  : _showPasswordRecovery,
-                              icon: const Icon(Icons.lock_reset_outlined),
-                              label: const Text('Esqueci minha senha'),
-                            ),
-                          ),
-                        ],
-                        const SizedBox(height: 24),
-                        if (_error != null)
-                          Padding(
-                            padding: const EdgeInsets.only(bottom: 16),
-                            child: Text(
-                              _error!,
-                              textAlign: TextAlign.center,
-                              style: TextStyle(color: scheme.error),
-                            ),
-                          ),
-                        FilledButton.icon(
-                          onPressed: _loading ? null : _submit,
-                          icon: _loading
-                              ? const SizedBox(
-                                  height: 20,
-                                  width: 20,
-                                  child: CircularProgressIndicator(
-                                    strokeWidth: 2,
-                                  ),
-                                )
-                              : Icon(
-                                  _isRegister
-                                      ? Icons.person_add_alt_1_outlined
-                                      : Icons.login,
-                                ),
-                          label: Text(_isRegister ? 'Criar conta' : 'Entrar'),
-                        ),
-                        TextButton(
-                          onPressed: _loading
-                              ? null
-                              : () => setState(() {
-                                  _isRegister = !_isRegister;
-                                  _error = null;
-                                }),
-                          child: Text(
-                            _isRegister
-                                ? 'Ja tenho conta - entrar'
-                                : 'Criar uma conta gratuita',
-                          ),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Ao criar uma conta, você aceita os termos de uso e a política de privacidade.',
-                          textAlign: TextAlign.center,
-                          style: Theme.of(context).textTheme.bodySmall,
-                        ),
-                      ],
+      body: wide
+          ? Row(
+              children: [
+                const Expanded(flex: 5, child: _HeroPanel()),
+                Expanded(
+                  flex: 4,
+                  child: Center(
+                    child: SingleChildScrollView(
+                      padding: const EdgeInsets.all(HopeSpacing.xxl),
+                      child: ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 400),
+                        child: form,
+                      ),
                     ),
+                  ),
+                ),
+              ],
+            )
+          : SafeArea(
+              child: Center(
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(HopeSpacing.xl),
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 420),
+                    child: form,
                   ),
                 ),
               ),
             ),
+    );
+  }
+
+  Widget _buildForm(BuildContext context, ColorScheme scheme) {
+    return Form(
+      key: _formKey,
+      child: AutofillGroup(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            const HopeCashLogo(iconSize: 52, showTagline: true),
+            const SizedBox(height: 28),
+            Text(
+              _isRegister ? 'Crie sua conta' : 'Acesse sua carteira',
+              style: Theme.of(context).textTheme.titleLarge,
+            ),
+            const SizedBox(height: 6),
+            Text(
+              _isRegister
+                  ? 'Comece agora a organizar sua vida financeira.'
+                  : 'Entre para continuar cuidando dos seus planos.',
+              style: Theme.of(
+                context,
+              ).textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const SizedBox(height: 24),
+            if (_isRegister) ...[
+              TextFormField(
+                controller: _name,
+                decoration: const InputDecoration(
+                  labelText: 'Nome',
+                  prefixIcon: Icon(Icons.person_outline),
+                ),
+                textInputAction: TextInputAction.next,
+                autofillHints: const [AutofillHints.name],
+                validator: (v) => (v == null || v.trim().length < 2)
+                    ? 'Informe seu nome'
+                    : null,
+              ),
+              const SizedBox(height: 16),
+            ],
+            TextFormField(
+              controller: _email,
+              decoration: const InputDecoration(
+                labelText: 'E-mail',
+                prefixIcon: Icon(Icons.mail_outline),
+              ),
+              keyboardType: TextInputType.emailAddress,
+              textInputAction: TextInputAction.next,
+              autofillHints: const [AutofillHints.email],
+              validator: (v) =>
+                  (v == null || !v.contains('@')) ? 'E-mail inválido' : null,
+            ),
+            const SizedBox(height: 16),
+            TextFormField(
+              controller: _password,
+              decoration: InputDecoration(
+                labelText: 'Senha',
+                prefixIcon: const Icon(Icons.lock_outline),
+                suffixIcon: IconButton(
+                  tooltip: _obscure ? 'Mostrar senha' : 'Ocultar senha',
+                  icon: Icon(
+                    _obscure
+                        ? Icons.visibility_off_outlined
+                        : Icons.visibility_outlined,
+                  ),
+                  onPressed: () => setState(() => _obscure = !_obscure),
+                ),
+              ),
+              obscureText: _obscure,
+              textInputAction: TextInputAction.done,
+              autofillHints: [
+                _isRegister
+                    ? AutofillHints.newPassword
+                    : AutofillHints.password,
+              ],
+              onFieldSubmitted: (_) => _submit(),
+              validator: (v) =>
+                  (v == null || v.length < 8) ? 'Mínimo de 8 caracteres' : null,
+            ),
+            if (!_isRegister)
+              Align(
+                alignment: Alignment.centerRight,
+                child: TextButton.icon(
+                  onPressed: _loading ? null : _showPasswordRecovery,
+                  icon: const Icon(Icons.lock_reset_outlined),
+                  label: const Text('Esqueci minha senha'),
+                ),
+              ),
+            const SizedBox(height: 24),
+            if (_error != null)
+              Padding(
+                padding: const EdgeInsets.only(bottom: 16),
+                child: Text(
+                  _error!,
+                  textAlign: TextAlign.center,
+                  style: TextStyle(color: scheme.error),
+                ),
+              ),
+            FilledButton.icon(
+              onPressed: _loading ? null : _submit,
+              icon: _loading
+                  ? const SizedBox(
+                      height: 20,
+                      width: 20,
+                      child: CircularProgressIndicator(strokeWidth: 2),
+                    )
+                  : Icon(
+                      _isRegister
+                          ? Icons.person_add_alt_1_outlined
+                          : Icons.login,
+                    ),
+              label: Text(_isRegister ? 'Criar conta' : 'Entrar'),
+            ),
+            TextButton(
+              onPressed: _loading
+                  ? null
+                  : () => setState(() {
+                      _isRegister = !_isRegister;
+                      _error = null;
+                    }),
+              child: Text(
+                _isRegister
+                    ? 'Já tenho conta — entrar'
+                    : 'Criar uma conta gratuita',
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Ao criar uma conta, você aceita os termos de uso e a política de privacidade.',
+              textAlign: TextAlign.center,
+              style: Theme.of(
+                context,
+              ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _HeroPanel extends StatelessWidget {
+  const _HeroPanel();
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    return Container(
+      decoration: const BoxDecoration(
+        gradient: LinearGradient(
+          begin: Alignment.topLeft,
+          end: Alignment.bottomRight,
+          colors: [AppTheme.deepBlue, AppTheme.primaryBlue],
+        ),
+      ),
+      child: LayoutBuilder(
+        builder: (context, constraints) => SingleChildScrollView(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: constraints.maxHeight),
+            child: Padding(
+              padding: const EdgeInsets.all(48),
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Theme(
+                    data: theme.copyWith(
+                      colorScheme: theme.colorScheme.copyWith(
+                        onSurface: Colors.white,
+                        onSurfaceVariant: Colors.white70,
+                      ),
+                    ),
+                    child: const HopeCashLogo(iconSize: 64),
+                  ),
+                  const SizedBox(height: 40),
+                  Text(
+                    'Sua vida financeira, mais clara',
+                    style: theme.textTheme.displaySmall?.copyWith(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w700,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Text(
+                    'Organize o presente, planeje os próximos passos e mantenha suas decisões no controle.',
+                    style: theme.textTheme.titleMedium?.copyWith(
+                      color: Colors.white.withValues(alpha: 0.82),
+                      fontWeight: FontWeight.w400,
+                    ),
+                  ),
+                  const SizedBox(height: 40),
+                  const _HeroBullet(
+                    icon: Icons.account_balance_wallet_outlined,
+                    text: 'Contas, cartões e lançamentos em um só lugar',
+                  ),
+                  const _HeroBullet(
+                    icon: Icons.calendar_month_outlined,
+                    text: 'Planejamento para hoje e para os próximos meses',
+                  ),
+                  const _HeroBullet(
+                    icon: Icons.auto_awesome_outlined,
+                    text: 'Hope para entender seus dados e preparar ações',
+                  ),
+                ],
+              ),
+            ),
           ),
         ),
+      ),
+    );
+  }
+}
+
+class _HeroBullet extends StatelessWidget {
+  const _HeroBullet({required this.icon, required this.text});
+
+  final IconData icon;
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Icon(icon, color: AppTheme.hopeGreenBright, size: 22),
+          const SizedBox(width: 12),
+          Expanded(
+            child: Text(
+              text,
+              style: Theme.of(context).textTheme.bodyLarge?.copyWith(
+                color: Colors.white.withValues(alpha: 0.9),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

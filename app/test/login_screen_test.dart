@@ -4,6 +4,28 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:hopecash/presentation/screens/login_screen.dart';
 
 void main() {
+  testWidgets('LoginScreen usa painel de marca apenas em tela larga', (
+    tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1100, 800);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+
+    await tester.pumpWidget(
+      const ProviderScope(child: MaterialApp(home: LoginScreen())),
+    );
+
+    expect(find.text('Sua vida financeira, mais clara'), findsOneWidget);
+    expect(find.byType(Card), findsNothing);
+
+    tester.view.physicalSize = const Size(390, 844);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Sua vida financeira, mais clara'), findsNothing);
+    expect(find.text('Acesse sua carteira'), findsOneWidget);
+  });
+
   testWidgets('LoginScreen valida campos obrigatórios', (tester) async {
     await tester.pumpWidget(
       const ProviderScope(child: MaterialApp(home: LoginScreen())),

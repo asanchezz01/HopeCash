@@ -1,7 +1,7 @@
 # HopeCash — IA & MCP: Plano de Implementação
 
 > Roadmap para transformar o HopeCash em um app com assistente financeiro inteligente, usando o
-> Groq com fallback para Cerebras (LLM) e Azure Speech (voz), com uma arquitetura de ferramentas compatível com MCP.
+> Cerebras com fallback para Groq (LLM) e Azure Speech (voz), com uma arquitetura de ferramentas compatível com MCP.
 > Cada etapa é deployável sozinha e entrega valor incremental.
 
 ## 1. Visão
@@ -21,7 +21,7 @@ confirmação humana. IA é opt-out por usuário (Configurações).
 
 | Peça | Estado |
 |---|---|
-| Cliente LLM | `modules/ai/llm.js` — Groq → Cerebras: chat, chatJson, chatStream, tools, health; retry, rate-limit e fallback |
+| Cliente LLM | `modules/ai/llm.js` — Cerebras → Groq: chat, chatJson, chatStream, tools, health; retry, rate-limit e fallback |
 | `POST /ai/parse-transaction` | Voz → lançamento estruturado com ids reais do usuário; nunca grava; fallback local no app |
 | `GET /ai/health` | Estado dos provedores LLM (app e retaguarda), com card de alerta no dashboard da retaguarda |
 | Toolbox somente-leitura | `modules/ai/tools/` — 13 tools (saldos, lançamentos, orçamento, fluxo de caixa, faturas, metas, dívidas, investimentos, resumo do mês, busca); `GET/POST /ai/tools*` para debug (não-prod) |
@@ -41,12 +41,12 @@ confirmação humana. IA é opt-out por usuário (Configurações).
 - `AI_ENABLED=false` continua sendo o bloqueio global; e-mail, push e scheduler têm
   chaves independentes e não são habilitados junto com a Hope.
 
-### Fallback Groq → Cerebras (2026-08-14)
+### Fallback Cerebras → Groq (2026-08-16)
 
-- O cliente usa `openai/gpt-oss-120b` no Groq como primeira opção e preserva o
-  `gpt-oss-120b` da Cerebras como fallback de mesma família/qualidade.
+- O cliente usa `gpt-oss-120b` na Cerebras como primeira opção e preserva o
+  `openai/gpt-oss-120b` do Groq como fallback de mesma família/qualidade.
 - Rate limits respeitam `Retry-After`; após uma nova falha, quota, timeout ou
-  indisponibilidade, a requisição é refeita na Cerebras.
+  indisponibilidade, a requisição é refeita no Groq.
 - `LLM_MAX_COMPLETION_TOKENS` limita a reserva de saída (padrão: 1200), reduzindo
   pressão de TPM sem cortar o contexto enviado ao modelo.
 

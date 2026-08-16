@@ -37,7 +37,7 @@ const groq = {
   },
 };
 
-const requestedProvider = (process.env.AI_PROVIDER || 'groq').toLowerCase();
+const requestedProvider = (process.env.AI_PROVIDER || 'cerebras').toLowerCase();
 const providerOrder = requestedProvider === 'cerebras' ? [cerebras, groq] : [groq, cerebras];
 const primaryProvider = providerOrder.find((provider) => provider.apiKey) ?? providerOrder[0];
 

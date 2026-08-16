@@ -132,7 +132,7 @@ SUPPORT_RATE_LIMIT_WINDOW_MINUTES="${SUPPORT_RATE_LIMIT_WINDOW_MINUTES:-15}"
 # codigo, nunca segredos. Valores vazios fazem os healthchecks reportarem a
 # indisponibilidade do provedor sem expor as chaves.
 AI_ENABLED="${AI_ENABLED:-false}"
-AI_PROVIDER="${AI_PROVIDER:-groq}"
+AI_PROVIDER="${AI_PROVIDER:-cerebras}"
 CEREBRAS_API_KEY="${CEREBRAS_API_KEY:-}"
 CEREBRAS_API_KEY_FILE="${CEREBRAS_API_KEY_FILE:-}"
 CEREBRAS_BASE_URL="${CEREBRAS_BASE_URL:-https://api.cerebras.ai/v1}"

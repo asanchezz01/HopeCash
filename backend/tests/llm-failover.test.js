@@ -4,16 +4,16 @@ import { llm } from '../src/modules/ai/llm.js';
 
 const providers = () => [
   {
+    id: 'cerebras', url: 'https://cerebras.test/v1', apiKey: 'cerebras-test',
+    timeoutMs: 1_000, reasoningEffort: 'low',
+    models: { default: 'gpt-oss-120b', chat: 'gpt-oss-120b', fast: 'gpt-oss-120b' },
+  },
+  {
     id: 'groq', url: 'https://groq.test/v1', apiKey: 'groq-test',
     timeoutMs: 1_000, reasoningEffort: 'low',
     models: {
       default: 'openai/gpt-oss-120b', chat: 'openai/gpt-oss-120b', fast: 'openai/gpt-oss-20b',
     },
-  },
-  {
-    id: 'cerebras', url: 'https://cerebras.test/v1', apiKey: 'cerebras-test',
-    timeoutMs: 1_000, reasoningEffort: 'low',
-    models: { default: 'gpt-oss-120b', chat: 'gpt-oss-120b', fast: 'gpt-oss-120b' },
   },
 ];
 
@@ -49,8 +49,8 @@ afterEach(() => {
   vi.unstubAllGlobals();
 });
 
-describe('Cliente LLM — Groq com fallback para Cerebras', () => {
-  it('usa Cerebras quando o Groq continua limitado após o retry', async () => {
+describe('Cliente LLM — Cerebras com fallback para Groq', () => {
+  it('usa Groq quando a Cerebras continua limitada após o retry', async () => {
     const fetchMock = vi.fn()
       .mockResolvedValueOnce(providerError(429, 'Please try again in 0s.', '0'))
       .mockResolvedValueOnce(providerError(429, 'Rate limit reached', '0'))
@@ -63,11 +63,11 @@ describe('Cliente LLM — Groq com fallback para Cerebras', () => {
 
     expect(message.content).toBe('fallback ok');
     expect(fetchMock).toHaveBeenCalledTimes(3);
-    expect(fetchMock.mock.calls[0][0]).toContain('groq.test');
-    expect(fetchMock.mock.calls[1][0]).toContain('groq.test');
-    expect(fetchMock.mock.calls[2][0]).toContain('cerebras.test');
-    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('openai/gpt-oss-120b');
-    expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe('gpt-oss-120b');
+    expect(fetchMock.mock.calls[0][0]).toContain('cerebras.test');
+    expect(fetchMock.mock.calls[1][0]).toContain('cerebras.test');
+    expect(fetchMock.mock.calls[2][0]).toContain('groq.test');
+    expect(JSON.parse(fetchMock.mock.calls[0][1].body).model).toBe('gpt-oss-120b');
+    expect(JSON.parse(fetchMock.mock.calls[2][1].body).model).toBe('openai/gpt-oss-120b');
   });
 
   it('respeita Retry-After e tenta novamente antes do failover', async () => {
@@ -80,7 +80,7 @@ describe('Cliente LLM — Groq com fallback para Cerebras', () => {
 
     expect(message.content).toBe('retry ok');
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls.every(([url]) => String(url).includes('groq.test'))).toBe(true);
+    expect(fetchMock.mock.calls.every(([url]) => String(url).includes('cerebras.test'))).toBe(true);
   });
 
   it('faz failover após timeout sem repetir a espera no provedor primário', async () => {
@@ -95,7 +95,7 @@ describe('Cliente LLM — Groq com fallback para Cerebras', () => {
 
     expect(message.content).toBe('fallback após timeout');
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    expect(fetchMock.mock.calls[1][0]).toContain('cerebras.test');
+    expect(fetchMock.mock.calls[1][0]).toContain('groq.test');
   });
 
   it('envia limite explícito de saída para evitar reserva excessiva de TPM', async () => {

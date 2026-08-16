@@ -59,8 +59,8 @@ services:
       BUILD_TIME: ${BUILD_TIME:-}
       # Desliga integralmente a Hope (chat, interpretação e voz).
       AI_ENABLED: ${AI_ENABLED:-true}
-      # Groq como primário, com fallback automático para Cerebras.
-      AI_PROVIDER: ${AI_PROVIDER:-groq}
+      # Cerebras como primário, com fallback automático para Groq.
+      AI_PROVIDER: ${AI_PROVIDER:-cerebras}
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
       CEREBRAS_API_KEY_FILE: ${CEREBRAS_API_KEY_FILE:-}
       CEREBRAS_BASE_URL: ${CEREBRAS_BASE_URL:-https://api.cerebras.ai/v1}

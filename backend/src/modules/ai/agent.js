@@ -9,9 +9,13 @@ const MAX_ITERATIONS = 6;
 const AGENT_DEADLINE_MS = 120_000;
 const MAX_TOOL_RESULT_CHARS = 6_000;
 const SAFE_GROUNDING_FALLBACK = 'Não consegui consultar dados suficientes para responder com segurança. Tente reformular a pergunta ou tente novamente em instantes.';
+const SAFE_ACTION_FALLBACK = 'Não consegui criar o card de confirmação. Nenhuma alteração foi feita. Tente novamente em instantes.';
 const FINANCIAL_INTENT = /\b(saldos?|extratos?|lancamentos?|transa(?:cao|coes)|movimenta(?:cao|coes)|despesas?|receitas?|gast\w*|pag\w*|receb\w*|contas?|cart(?:ao|oes)|carteiras?|faturas?|venc\w*|orcamentos?|metas?|dividas?|financiamentos?|investimentos?|patrimonios?|fluxos?|categorias?|transfer\w*|pix|boletos?|farmacias?|mercados?|assinaturas?|parcelas?|juros?|rendas?|economi\w*|valores?)\b/i;
 const FINANCIAL_ACTION = /\b(cria(?:r|ndo)?|crie|criou|lanca(?:r|ndo)?|lance|lancou|adicion\w*|alter\w*|edit\w*|pagu\w*|quit\w*|transfer\w*|registr\w*|orc\w*)\b/i;
 const SHORT_FOLLOW_UP = /^(sim|nao|pode|quero|mostre|detalhe|detalhar|mais|esse|essa|isso|dele|dela)(\s+.*)?[?!.]*$/i;
+const WRITE_REQUEST = /\b(criar|crie|cria|lancar|lance|lanca|adicionar|adicione|adiciona|alterar|altere|editar|edite|pagar|pague|dar\s+baixa|baixe|quitar|quite|transferir|transfira|registrar|registre|orcar|orce|aportar|aporte|marc\w+\s+como\s+pag\w*)\b/i;
+const WRITE_FOLLOW_UP = /^(sim|pode|quero|isso|esse|essa|tente(?:\s+de)?\s+novo|de\s+novo|novamente|faca|faz|gere|pode\s+(?:fazer|gerar))(\s+.*)?[?!.]*$/i;
+const WRITE_CONTEXT = /\b(proposta|card|confirm\w*|criar?|gerar|lanc\w*|pag\w*|baix\w*|quit\w*|alter\w*|edit\w*|transfer\w*|registr\w*|orc\w*|aport\w*)\b/i;
 const SOCIAL_ONLY = /^(oi|ola|obrigad[oa]?|valeu|tchau|bom dia|boa tarde|boa noite)[!., ]*$/i;
 
 const normalizeIntent = (value) => String(value ?? '')
@@ -169,6 +173,23 @@ export function requiresFinancialGrounding(history) {
   return FINANCIAL_INTENT.test(normalizeIntent(latestBefore(history, userIndex, 'assistant')));
 }
 
+/**
+ * Pedidos de escrita só podem terminar sem card quando falta informação e o
+ * agente faz uma pergunta objetiva. A regra também cobre respostas curtas como
+ * "tente de novo" depois de a Hope oferecer uma proposta no turno anterior.
+ */
+export function requiresWriteAction(history) {
+  let userIndex = -1;
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role === 'user') { userIndex = i; break; }
+  }
+  if (userIndex < 0) return false;
+  const current = normalizeIntent(history[userIndex].content);
+  if (WRITE_REQUEST.test(current)) return true;
+  if (!WRITE_FOLLOW_UP.test(current)) return false;
+  return WRITE_CONTEXT.test(normalizeIntent(latestBefore(history, userIndex, 'assistant')));
+}
+
 const isEvidenceTool = (name) => {
   const tool = TOOLS_BY_NAME[name];
   return Boolean(tool && (tool.scope === 'write' || !name.startsWith('search_')));
@@ -189,6 +210,11 @@ const answerFromEvidenceReminder = {
 const clarificationReminder = {
   role: 'system',
   content: 'A ferramenta indicou nome não encontrado ou ambíguo. Se o contexto da conversa apontar a opção correta entre as "disponiveis", chame a ferramenta de novo com ela; caso contrário, faça ao usuário uma pergunta curta e objetiva citando as opções. Não invente dados.',
+};
+
+const writeActionReminder = {
+  role: 'system',
+  content: 'O usuário pediu uma alteração financeira. Você ainda não criou nenhuma proposta neste turno. Não prometa nem descreva um card: chame agora a ferramenta de escrita adequada para criar a ação confirmável. Se faltar um dado essencial ou houver ambiguidade real, faça somente uma pergunta curta e objetiva.',
 };
 
 const truncate = (text) => (text.length > MAX_TOOL_RESULT_CHARS
@@ -243,6 +269,7 @@ export async function runAgent(auth, history, events = {}, context = {}) {
   const toolLog = [];
   const actionIds = [];
   const groundingRequired = requiresFinancialGrounding(history);
+  const writeActionRequired = requiresWriteAction(history);
   let hasEvidence = false;
   // Texto exibido ao usuário: inclui eventuais preâmbulos emitidos antes de
   // uma tool call ("Vou verificar seu saldo…"), não só a resposta final.
@@ -281,16 +308,23 @@ export async function runAgent(auth, history, events = {}, context = {}) {
     }
     // Última iteração roda sem tools para forçar uma resposta em texto.
     const isLast = i === MAX_ITERATIONS - 1;
-    const canStream = !groundingRequired || hasEvidence || clarificationNeeded;
+    const canStream = (!groundingRequired || hasEvidence || clarificationNeeded)
+      && (!writeActionRequired || actionIds.length > 0 || clarificationNeeded);
     const message = await streamOnce({
       messages,
-      tools: isLast && (!groundingRequired || hasEvidence) ? undefined : tools,
+      tools: isLast && (!groundingRequired || hasEvidence)
+        && (!writeActionRequired || actionIds.length > 0) ? undefined : tools,
       // O texto só é transmitido depois da barreira de evidência. Assim uma
       // tentativa alucinada nunca chega parcialmente ao aplicativo.
       onDelta: canStream ? events.onDelta : undefined,
     });
 
     if (!message.tool_calls?.length) {
+      if (writeActionRequired && actionIds.length === 0 && !clarificationNeeded) {
+        logger.warn({ userId: auth.userId }, 'Resposta de escrita sem ação foi bloqueada');
+        messages.push(writeActionReminder);
+        continue;
+      }
       if (groundingRequired && !hasEvidence && !clarificationNeeded) {
         logger.warn({ userId: auth.userId }, 'Resposta financeira sem evidência foi bloqueada');
         messages.push(groundingReminder(toolLog.length > 0));
@@ -331,13 +365,19 @@ export async function runAgent(auth, history, events = {}, context = {}) {
       toolLog.push({ name, arguments: args, result: payload });
       messages.push({ role: 'tool', tool_call_id: call.id, tool_name: name, content: payload });
     }
-    if (groundingRequired) {
+    if (writeActionRequired && actionIds.length === 0 && !clarificationNeeded) {
+      messages.push(writeActionReminder);
+    } else if (groundingRequired) {
       messages.push(roundHasEvidence
         ? answerFromEvidenceReminder
         : clarificationNeeded ? clarificationReminder : groundingReminder(true));
     }
   }
 
+  if (writeActionRequired && actionIds.length === 0 && !clarificationNeeded) {
+    events.onDelta?.(SAFE_ACTION_FALLBACK);
+    return { content: SAFE_ACTION_FALLBACK, tool_calls: toolLog, action_ids: actionIds, references: [] };
+  }
   if (groundingRequired && !hasEvidence) {
     events.onDelta?.(SAFE_GROUNDING_FALLBACK);
     return { content: SAFE_GROUNDING_FALLBACK, tool_calls: toolLog, action_ids: actionIds, references: [] };

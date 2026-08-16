@@ -143,6 +143,45 @@ describe('Ações da Hope — confirmação em duas fases', () => {
     expect(action).toMatchObject({ status: 'proposed', tool_name: 'create_transaction' });
   });
 
+  it('bloqueia promessa de card e exige pay_transaction em continuação curta', async () => {
+    const planned = await api.post('/api/v1/transactions').set(auth(token)).send({
+      type: 'expense', description: 'Unimed', amount_planned: 3152.63,
+      competence_date: today(), due_date: today(), status: 'planned',
+      account_id: accountId, category_id: categoryId,
+    });
+
+    vi.stubGlobal('fetch', groqStream(
+      toolRound('list_transactions', { text: 'Unimed', status: 'planned' }),
+      textRound('Encontrei a Unimed. Posso gerar o card para confirmar o pagamento.'),
+    ));
+    const first = await api.post('/api/v1/ai/chat').set(auth(token))
+      .send({ message: 'analise o lançamento da Unimed' });
+    expect(first.status).toBe(200);
+    const continuedConversationId = eventData(first.text, 'meta').conversation_id;
+
+    vi.stubGlobal('fetch', groqStream(
+      toolRound('list_transactions', { text: 'Unimed', status: 'planned' }),
+      textRound('Vou gerar a proposta. Revise o card que aparecerá.'),
+      toolRound('pay_transaction', {
+        transaction_id: planned.body.data.id,
+        amount: 3152.63,
+        date: today(),
+      }),
+      textRound('A proposta foi criada. Revise o card e confirme se estiver tudo certo.'),
+    ));
+    const second = await api.post('/api/v1/ai/chat').set(auth(token)).send({
+      conversation_id: continuedConversationId,
+      message: 'tente de novo',
+    });
+
+    expect(second.status).toBe(200);
+    expect(second.text).toContain('event: action');
+    expect(second.text).not.toContain('Vou gerar a proposta');
+    const action = eventData(second.text, 'action');
+    expect(action).toMatchObject({ status: 'proposed', tool_name: 'pay_transaction' });
+    expect(action.summary.title).toBe('Dar baixa no lançamento');
+  });
+
   it('recusar preserva os dados e fica registrado no histórico', async () => {
     vi.stubGlobal('fetch', groqStream(
       toolRound('create_category', { name: 'Pets', type: 'expense' }),

@@ -60,6 +60,10 @@ O `/opt/hopecash/.env` pertence ao VPS, tem permissão `0600` e é excluído da
 sincronização. O script preserva credenciais do MySQL, JWT, Groq, Azure Speech e
 demais integrações. Por padrão, as portas internas de MySQL, API, app e retaguarda
 ficam vinculadas a `127.0.0.1`; somente o Nginx Proxy Manager publica 80/443.
+Nos Proxy Hosts, os upstreams devem ser os nomes exclusivos
+`hopecash-web:80`, `hopecash-api:3000` e `hopecash-retaguarda:80`. Não use os
+aliases genéricos `web`, `api` ou `retaguarda`, pois eles podem colidir quando
+outra aplicação participa da rede `hopecash_proxy`.
 
 As opções manuais disponíveis no workflow são:
 

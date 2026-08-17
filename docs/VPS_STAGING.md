@@ -6,10 +6,15 @@ retaguarda em portas locais e publica apenas o Nginx Proxy Manager em 80/443.
 
 | Domínio | Destino Docker |
 |---|---|
-| `app.hopecash.tech` | `web:80` |
-| `api.hopecash.tech` | `api:3000` |
-| `adm.hopecash.tech` | `retaguarda:80` |
+| `app.hopecash.tech` | `hopecash-web:80` |
+| `api.hopecash.tech` | `hopecash-api:3000` |
+| `adm.hopecash.tech` | `hopecash-retaguarda:80` |
 | `adm2.hopecash.tech` | `portainer:9443` (HTTPS interno) |
+
+Use sempre os nomes exclusivos dos containers como destino no Nginx Proxy
+Manager. Os aliases Compose genéricos (`web`, `api` e `retaguarda`) não são
+seguros em uma rede Docker compartilhada: outra stack pode registrar o mesmo
+alias e fazer o proxy encaminhar requisições para a aplicação errada.
 
 O painel do Nginx Proxy Manager escuta somente em `127.0.0.1:81`. Para
 administrá-lo, abra um túnel e acesse `http://127.0.0.1:8181`:
@@ -55,14 +60,14 @@ TTS tem bloqueio equivalente e os endpoints de health devolvem
 
 ### Estado após a migração de IA (2026-08-13)
 
-Groq (primário), Cerebras (fallback) e Azure Speech compõem a configuração da
-Hope. Se o Groq responder com quota, rate limit, indisponibilidade ou erro de
-autenticação, o backend tenta a Cerebras automaticamente. Os efeitos externos
+Cerebras (primário), Groq (fallback) e Azure Speech compõem a configuração da
+Hope. Se a Cerebras responder com quota, rate limit, indisponibilidade ou erro de
+autenticação, o backend tenta o Groq automaticamente. Os efeitos externos
 que ainda não fazem parte deste corte permanecem bloqueados:
 
 ```dotenv
 AI_ENABLED=true
-AI_PROVIDER=groq
+AI_PROVIDER=cerebras
 CEREBRAS_API_KEY=<segredo>
 GROQ_API_KEY=<segredo>
 TTS_ENABLED=true

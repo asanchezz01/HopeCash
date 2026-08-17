@@ -47,10 +47,47 @@ jobs:
           test -n "$APP_STORE_CONNECT_PRIVATE_KEY"
           test -n "$IOS_CERTIFICATE_PRIVATE_KEY"
 
+      # O CDN do CocoaPods entrega os podspecs por raw.githubusercontent.com, e
+      # o IP compartilhado dos runners macOS estoura a cota de anônimo (429).
+      # Guardar o índice do trunk e os downloads entre execuções derruba quase
+      # todas essas requisições.
+      - name: Cache CocoaPods
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.cocoapods/repos/trunk
+            ~/Library/Caches/CocoaPods
+          key: cocoapods-${{ runner.os }}-${{ hashFiles('app/pubspec.lock', 'app/ios/Podfile') }}
+          restore-keys: |
+            cocoapods-${{ runner.os }}-
+
       - name: Install iOS dependencies
         run: |
           flutter pub get
-          pod install --project-directory=ios
+          # O 429 do CDN é transitório: espera e tenta de novo antes de desistir.
+          for attempt in 1 2 3; do
+            if pod install --project-directory=ios; then
+              exit 0
+            fi
+            if [ "$attempt" -eq 3 ]; then
+              echo "::error::pod install falhou em $attempt tentativas" >&2
+              exit 1
+            fi
+            delay=$((attempt * 30))
+            echo "::warning::pod install falhou (tentativa $attempt). Nova tentativa em ${delay}s"
+            sleep "$delay"
+          done
+
+      # Sem Podfile.lock no repositório, cada execução resolve as versões do
+      # zero e busca muito mais podspec no CDN. Este artefato existe para que o
+      # lock gerado aqui possa ser commitado (não há Mac no time).
+      - name: Upload Podfile.lock
+        uses: actions/upload-artifact@v4
+        with:
+          name: Podfile-lock-${{ env.IOS_BUILD_NUMBER }}
+          path: app/ios/Podfile.lock
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Install App Store Connect tools
         run: |

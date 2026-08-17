@@ -7,6 +7,7 @@ import 'package:hopecash/core/theme/app_theme.dart';
 import 'package:hopecash/core/utils/money.dart';
 import 'package:hopecash/data/local/database.dart';
 import 'package:hopecash/data/repositories/finance_repository.dart';
+import 'package:hopecash/presentation/components/hope_components.dart';
 import 'package:hopecash/presentation/screens/budget_screen.dart';
 import 'package:hopecash/presentation/screens/categories_screen.dart';
 import 'package:hopecash/presentation/screens/credit_cards_screen.dart';
@@ -177,6 +178,82 @@ void main() {
       await disposeApp(tester);
     });
   }
+
+  // No desktop, "Orçamento por categoria" e "Distribuição de despesas" dividem
+  // uma Row, e os dois painéis usam LayoutBuilder por dentro (as barras de
+  // execução e o donut). LayoutBuilder não sabe responder altura intrínseca —
+  // em release ela vale 0 —, então medir a linha por intrínseco fechava uma
+  // altura menor que o conteúdo real e a seção "Meta financeira" era desenhada
+  // por cima dos cartões. O seed padrão não tem categorias, então essa dobra só
+  // aparece com orçamento e despesa categorizados.
+  testWidgets('meta financeira não sobrepõe os cartões de categoria', (
+    tester,
+  ) async {
+    await seed();
+    final repo = FinanceRepository(db);
+    final now = DateTime.now();
+    final month = '${now.year}-${now.month.toString().padLeft(2, '0')}-01';
+    final budgetId = await repo.createBudget(referenceMonth: month);
+    for (final category in const [
+      ('cat-food', 'Alimentação', 900.0, 640.0),
+      ('cat-home', 'Moradia', 3200.0, 3200.0),
+      ('cat-fun', 'Lazer', 400.0, 512.0),
+    ]) {
+      await repo.upsertCategory(
+        id: category.$1,
+        name: category.$2,
+        type: 'expense',
+      );
+      await repo.upsertBudgetItem(
+        budgetId: budgetId,
+        categoryId: category.$1,
+        plannedAmount: category.$3,
+      );
+      await repo.addTransaction(
+        type: 'expense',
+        description: 'Gasto em ${category.$2}',
+        amount: category.$4,
+        date: todayIso(),
+        isPaid: true,
+        accountId: 'acc-1',
+        categoryId: category.$1,
+      );
+    }
+    await repo.upsertGoal(
+      id: 'goal-1',
+      name: 'Viagem de fim de ano',
+      targetAmount: 8000,
+      accumulatedAmount: 2400,
+    );
+
+    await atSize(tester, _viewports['desktop']!, () async {
+      await tester.pumpWidget(wrap(const DashboardScreen()));
+      await pumpFrames(tester);
+      expect(tester.takeException(), isNull);
+
+      // 'Alimentação' aparece nos dois cartões da linha (barra e legenda do
+      // donut), então a checagem cobre as duas colunas.
+      final categoryCards = find.ancestor(
+        of: find.text('Alimentação'),
+        matching: find.byType(AppSurface),
+      );
+      expect(categoryCards, findsNWidgets(2));
+      final goalCard = find
+          .ancestor(
+            of: find.text('Viagem de fim de ano'),
+            matching: find.byType(AppSurface),
+          )
+          .first;
+      final goalTop = tester.getRect(goalCard).top;
+      for (var i = 0; i < 2; i++) {
+        expect(
+          goalTop,
+          greaterThanOrEqualTo(tester.getRect(categoryCards.at(i)).bottom),
+        );
+      }
+    });
+    await disposeApp(tester);
+  });
 
   testWidgets(
     'card do orçamento abre nova subcategoria com categoria mãe preenchida',

@@ -254,36 +254,40 @@ class _DashboardContent extends StatelessWidget {
 
                     if (wide) ...[
                       const SizedBox(height: HopeSpacing.lg),
-                      IntrinsicHeight(
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  SectionTitle(
-                                    title: 'Orçamento por categoria',
-                                    action: '${categories.length} categorias',
-                                  ),
-                                  categoryBudget,
-                                ],
-                              ),
+                      // Sem IntrinsicHeight nesta linha: os dois painéis usam
+                      // LayoutBuilder por dentro (as barras de orçamento e o
+                      // donut), e LayoutBuilder não sabe responder altura
+                      // intrínseca — em release ela vale 0. A linha fechava
+                      // mais curta que o conteúdo real e a seção "Meta
+                      // financeira" subia por cima dos cartões.
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                SectionTitle(
+                                  title: 'Orçamento por categoria',
+                                  action: '${categories.length} categorias',
+                                ),
+                                categoryBudget,
+                              ],
                             ),
-                            const SizedBox(width: HopeSpacing.lg),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.stretch,
-                                children: [
-                                  const SectionTitle(
-                                    title: 'Distribuição de despesas',
-                                  ),
-                                  categoryDonut,
-                                ],
-                              ),
+                          ),
+                          const SizedBox(width: HopeSpacing.lg),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                const SectionTitle(
+                                  title: 'Distribuição de despesas',
+                                ),
+                                categoryDonut,
+                              ],
                             ),
-                          ],
-                        ),
+                          ),
+                        ],
                       ),
                     ] else ...[
                       SectionTitle(

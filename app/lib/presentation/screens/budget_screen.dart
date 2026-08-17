@@ -6,6 +6,7 @@ import '../../core/design_system/design_tokens.dart';
 import '../../core/utils/finance_calc.dart';
 import '../../core/utils/money.dart';
 import '../../data/local/database.dart';
+import '../../data/repositories/finance_repository.dart';
 import '../components/hope_components.dart';
 import '../widgets/quick_create_category.dart';
 import '../widgets/searchable_category_field.dart';
@@ -290,6 +291,27 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
       (s, i) => s + realizedOf(i),
     );
 
+    // Aperto: só despesa, e só onde ainda existe folga entre previsto e
+    // consumido. O resumo aperta o mês inteiro; cada cartão aperta a categoria.
+    final squeezeTargets = _squeezeTargets(
+      items: expenseItems,
+      categories: categories,
+      subcategories: subcategories,
+      consumedOf: realizedOf,
+      fallbackColor: context.hopeColors.expense,
+    );
+    final totalSlack = squeezeTargets.fold<double>(0, (s, t) => s + t.slack);
+    final squeezeByCategory = {
+      for (final group in filteredExpenseGroups)
+        group.categoryId: _squeezeTargets(
+          items: group.items,
+          categories: categories,
+          subcategories: subcategories,
+          consumedOf: group.realizedFor,
+          fallbackColor: context.hopeColors.expense,
+        ),
+    };
+
     return ListView(
       padding: EdgeInsets.fromLTRB(
         context.pagePadding,
@@ -308,10 +330,17 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    Text(
-                      'Previsto × Realizado',
-                      style: Theme.of(context).textTheme.titleMedium,
+                    // O título cede espaço para a porcentagem: em tela estreita
+                    // (320 px) os dois juntos não caberiam.
+                    Expanded(
+                      child: Text(
+                        'Previsto × Realizado',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: Theme.of(context).textTheme.titleMedium,
+                      ),
                     ),
+                    const SizedBox(width: HopeSpacing.xs),
                     Text(
                       totalPlanned > 0
                           ? '${(totalRealized / totalPlanned * 100).round()}%'
@@ -361,6 +390,27 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
                       ),
                     ),
                   ),
+                // Primeiro a situação, depois a ação: quanto ainda sobra de
+                // folga e só então o convite para apertar.
+                if (squeezeTargets.isNotEmpty) ...[
+                  Padding(
+                    padding: const EdgeInsets.only(top: 6),
+                    child: Text(
+                      '${formatMoney(totalSlack)} de folga entre o previsto e o consumido em ${squeezeTargets.length == 1 ? '1 linha' : '${squeezeTargets.length} linhas'}',
+                      style: Theme.of(context).textTheme.bodySmall,
+                    ),
+                  ),
+                  const SizedBox(height: HopeSpacing.xs),
+                  Align(
+                    alignment: Alignment.centerLeft,
+                    child: OutlinedButton.icon(
+                      onPressed: () =>
+                          _showBudgetSqueezeSheet(context, squeezeTargets),
+                      icon: const Icon(Icons.compress_rounded, size: 18),
+                      label: const Text('Apertar previsto'),
+                    ),
+                  ),
+                ],
               ],
             ),
           ),
@@ -446,6 +496,13 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
               initialCategoryId: group.categoryId,
               initialType: 'expense',
             ),
+            onSqueeze:
+                (squeezeByCategory[group.categoryId] ?? const []).isEmpty
+                ? null
+                : () => _showBudgetSqueezeSheet(
+                    context,
+                    squeezeByCategory[group.categoryId]!,
+                  ),
           ),
           const SizedBox(height: HopeSpacing.sm),
         ],
@@ -502,6 +559,471 @@ void _showBudgetItemSheet(
       initialType: initialType,
     ),
   );
+}
+
+// ---------------- Aperto do previsto ----------------
+
+double _round2(double value) => (value * 100).roundToDouble() / 100;
+
+/// Uma linha do orçamento vista pela ótica do aperto.
+///
+/// O piso é o consumido, e não zero: o mês já gastou (ou já comprometeu) esse
+/// valor, então prever menos que isso não aperta nada — só fabrica um estouro.
+/// Aperto também não sobe o previsto; aumentar continua sendo edição do item.
+class _SqueezeTarget {
+  const _SqueezeTarget({
+    required this.item,
+    required this.categoryName,
+    required this.label,
+    required this.consumed,
+    required this.color,
+  });
+
+  final LocalBudgetItem item;
+  final String categoryName;
+  final String label;
+
+  /// Realizado da linha no mês — inclui o que já está comprometido, igual à
+  /// barra que a tela mostra. O piso tem que ser o mesmo número da barra, senão
+  /// o arraste contradiz o que a pessoa está vendo.
+  final double consumed;
+  final Color color;
+
+  double get planned => _round2(item.plannedAmount);
+  double get floor => _round2(consumed.clamp(0, planned));
+  double get slack => _round2(planned - floor);
+  bool get hasSlack => slack >= 0.01;
+
+  /// Quem nomeia a linha é o termo mais específico que ela tem: a subcategoria
+  /// quando existe, a categoria quando o item cobre a categoria inteira.
+  bool get _whole => item.subcategoryId == null;
+  String get title => _whole ? categoryName : label;
+  String get subtitle => _whole ? label : categoryName;
+}
+
+/// Linhas de despesa com folga entre previsto e consumido, maior folga primeiro
+/// (é por onde vale começar a cortar).
+List<_SqueezeTarget> _squeezeTargets({
+  required List<LocalBudgetItem> items,
+  required Map<String, LocalCategory> categories,
+  required Map<String, LocalSubcategory> subcategories,
+  required double Function(LocalBudgetItem item) consumedOf,
+  required Color fallbackColor,
+}) {
+  final targets = [
+    for (final item in items)
+      _SqueezeTarget(
+        item: item,
+        categoryName: categories[item.categoryId]?.name ?? 'Categoria',
+        label: _budgetItemDisplayName(item, subcategories),
+        consumed: consumedOf(item),
+        color: _parseColor(categories[item.categoryId]?.color) ?? fallbackColor,
+      ),
+  ]..sort((a, b) => b.slack.compareTo(a.slack));
+  return [
+    for (final target in targets)
+      if (target.hasSlack) target,
+  ];
+}
+
+void _showBudgetSqueezeSheet(
+  BuildContext context,
+  List<_SqueezeTarget> targets,
+) {
+  if (targets.isEmpty) {
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(
+        content: Text('Sem folga para apertar: o consumido alcançou o previsto'),
+      ),
+    );
+    return;
+  }
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (_) => _BudgetSqueezeSheet(targets: targets),
+  );
+}
+
+class _BudgetSqueezeSheet extends ConsumerStatefulWidget {
+  const _BudgetSqueezeSheet({required this.targets});
+
+  final List<_SqueezeTarget> targets;
+
+  @override
+  ConsumerState<_BudgetSqueezeSheet> createState() =>
+      _BudgetSqueezeSheetState();
+}
+
+class _BudgetSqueezeSheetState extends ConsumerState<_BudgetSqueezeSheet> {
+  final _formKey = GlobalKey<FormState>();
+
+  /// Previsto em edição por item. Começa no valor atual: abrir a folha não
+  /// muda nada até alguém arrastar.
+  late final Map<String, double> _planned = {
+    for (final target in widget.targets) target.item.id: target.planned,
+  };
+  bool _saving = false;
+
+  double _valueOf(_SqueezeTarget target) =>
+      _planned[target.item.id] ?? target.planned;
+
+  double get _freed => _round2(
+    widget.targets.fold<double>(
+      0,
+      (sum, target) => sum + (target.planned - _valueOf(target)),
+    ),
+  );
+
+  List<_SqueezeTarget> get _changed => [
+    for (final target in widget.targets)
+      if (_valueOf(target) != target.planned) target,
+  ];
+
+  void _set(_SqueezeTarget target, double value) {
+    final clamped = _round2(value.clamp(target.floor, target.planned));
+    if (clamped == _valueOf(target)) return;
+    setState(() => _planned[target.item.id] = clamped);
+  }
+
+  Future<void> _persist(
+    FinanceRepository repo,
+    LocalBudgetItem item,
+    double plannedAmount,
+  ) => repo.upsertBudgetItem(
+    id: item.id,
+    budgetId: item.budgetId,
+    categoryId: item.categoryId,
+    subcategoryId: item.subcategoryId,
+    plannedAmount: plannedAmount,
+    isFixed: item.isFixed,
+    dueDay: item.dueDay,
+    accountId: item.accountId,
+    cardId: item.cardId,
+    currentVersion: item.version,
+  );
+
+  Future<void> _apply() async {
+    final changed = _changed;
+    if (changed.isEmpty) return;
+    setState(() => _saving = true);
+    // Capturados antes do pop: o desfazer da snackbar sobrevive a esta folha.
+    final repo = ref.read(financeRepositoryProvider);
+    final sync = ref.read(syncServiceProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final freed = _freed;
+
+    for (final target in changed) {
+      await _persist(repo, target.item, _valueOf(target));
+    }
+    sync.syncNow();
+    if (!mounted) return;
+    Navigator.pop(context);
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text('Previsto apertado: ${formatMoney(freed)} de folga'),
+        action: SnackBarAction(
+          label: 'Desfazer',
+          onPressed: () async {
+            for (final target in changed) {
+              await _persist(repo, target.item, target.planned);
+            }
+            sync.syncNow();
+          },
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final targets = widget.targets;
+    final freed = _freed;
+    final changedCount = _changed.length;
+
+    return PremiumFormSheet(
+      title: 'Aperto do previsto',
+      subtitle: targets.length == 1
+          ? 'Arraste até onde o mês já consumiu — o consumido é o limite.'
+          : '${targets.length} linhas com folga. Arraste cada uma até onde o mês já consumiu.',
+      icon: Icons.compress_rounded,
+      formKey: _formKey,
+      fields: [
+        for (final target in targets)
+          PremiumFormSection(
+            title: target.title,
+            subtitle: target.subtitle,
+            children: [
+              _SqueezeSlider(
+                target: target,
+                value: _valueOf(target),
+                onChanged: (value) => _set(target, value),
+              ),
+            ],
+          ),
+        if (targets.length > 1)
+          AppSurface.flat(
+            color: context.hopeColors.positiveSurface,
+            child: Row(
+              children: [
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        'Folga liberada',
+                        style: Theme.of(context).textTheme.labelLarge,
+                      ),
+                      Text(
+                        changedCount == 0
+                            ? 'Nenhuma linha apertada ainda'
+                            : changedCount == 1
+                            ? '1 linha apertada'
+                            : '$changedCount linhas apertadas',
+                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
+                          color: Theme.of(context).colorScheme.onSurfaceVariant,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                const SizedBox(width: HopeSpacing.sm),
+                MoneyText(
+                  freed,
+                  emphasis: MoneyEmphasis.primary,
+                  color: freed >= 0.01 ? context.hopeColors.success : null,
+                  semanticsPrefix: 'Folga liberada',
+                ),
+              ],
+            ),
+          ),
+      ],
+      secondaryAction: OutlinedButton(
+        onPressed: _saving ? null : () => Navigator.pop(context),
+        child: const Text('Cancelar'),
+      ),
+      primaryAction: FilledButton.icon(
+        onPressed: _saving || freed < 0.01 ? null : _apply,
+        icon: const Icon(Icons.compress_rounded),
+        label: Text(
+          freed < 0.01
+              ? 'Arraste para apertar'
+              : 'Apertar ${formatMoney(freed)}',
+        ),
+      ),
+    );
+  }
+}
+
+/// A barra de arraste do aperto.
+///
+/// A escala é o previsto original inteiro (0 → previsto), então a fatia já
+/// consumida aparece no mesmo tamanho que tem na barra da lista. O polegar
+/// trava nessa fatia: é o limite anunciado pelo recurso, não um erro.
+class _SqueezeSlider extends StatelessWidget {
+  const _SqueezeSlider({
+    required this.target,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final _SqueezeTarget target;
+  final double value;
+  final ValueChanged<double> onChanged;
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = context.hopeColors;
+    final muted = theme.colorScheme.onSurfaceVariant;
+    final freed = _round2(target.planned - value);
+    final squeezed = freed >= 0.01;
+    final consumedFraction = target.planned <= 0
+        ? 0.0
+        : target.floor / target.planned;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                'Novo previsto',
+                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+              ),
+            ),
+            MoneyText(
+              value,
+              emphasis: MoneyEmphasis.primary,
+              color: squeezed ? colors.success : null,
+              semanticsPrefix: 'Novo previsto de ${target.title}',
+            ),
+          ],
+        ),
+        SliderTheme(
+          data: SliderTheme.of(context).copyWith(
+            trackHeight: 12,
+            trackShape: _ConsumedFloorTrackShape(
+              consumedFraction: consumedFraction,
+              consumedColor: colors.expense,
+            ),
+            activeTrackColor: target.color.withValues(alpha: 0.38),
+            inactiveTrackColor: theme.colorScheme.surfaceContainerHighest,
+            thumbColor: theme.colorScheme.primary,
+            overlayColor: theme.colorScheme.primary.withValues(alpha: 0.12),
+            thumbShape: const RoundSliderThumbShape(
+              enabledThumbRadius: 11,
+              elevation: 0,
+              pressedElevation: 0,
+            ),
+            overlayShape: const RoundSliderOverlayShape(overlayRadius: 24),
+          ),
+          child: Slider(
+            value: value.clamp(0, target.planned),
+            max: target.planned,
+            // O piso é aplicado no callback, num lugar só: teclado, leitor de
+            // tela e arraste travam no mesmo ponto.
+            onChanged: onChanged,
+            semanticFormatterCallback: moneySemanticLabel,
+          ),
+        ),
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    'Consumido',
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+                  // O cadeado fica junto do número, não do rótulo: é o valor
+                  // que está travado.
+                  Row(
+                    children: [
+                      Icon(Icons.lock_outline, size: 13, color: colors.expense),
+                      const SizedBox(width: HopeSpacing.xxs),
+                      Flexible(
+                        child: MoneyText(
+                          target.floor,
+                          emphasis: MoneyEmphasis.caption,
+                          color: colors.expense,
+                          semanticsPrefix: 'Consumido',
+                        ),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: HopeSpacing.sm),
+            Expanded(
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.end,
+                children: [
+                  Text(
+                    squeezed ? 'Libera' : 'Previsto atual',
+                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
+                  ),
+                  MoneyText(
+                    squeezed ? freed : target.planned,
+                    emphasis: MoneyEmphasis.caption,
+                    color: squeezed ? colors.success : muted,
+                    textAlign: TextAlign.end,
+                    semanticsPrefix: squeezed ? 'Libera' : 'Previsto atual',
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ],
+    );
+  }
+}
+
+/// Trilha que pinta a fatia já consumida do previsto.
+///
+/// Sem ela a barra não explica por que o polegar travou no meio do caminho.
+class _ConsumedFloorTrackShape extends RoundedRectSliderTrackShape {
+  const _ConsumedFloorTrackShape({
+    required this.consumedFraction,
+    required this.consumedColor,
+  });
+
+  final double consumedFraction;
+  final Color consumedColor;
+
+  @override
+  void paint(
+    PaintingContext context,
+    Offset offset, {
+    required RenderBox parentBox,
+    required SliderThemeData sliderTheme,
+    required Animation<double> enableAnimation,
+    required TextDirection textDirection,
+    required Offset thumbCenter,
+    Offset? secondaryOffset,
+    bool isDiscrete = false,
+    bool isEnabled = false,
+    double additionalActiveTrackHeight = 2,
+  }) {
+    super.paint(
+      context,
+      offset,
+      parentBox: parentBox,
+      sliderTheme: sliderTheme,
+      enableAnimation: enableAnimation,
+      textDirection: textDirection,
+      thumbCenter: thumbCenter,
+      secondaryOffset: secondaryOffset,
+      isDiscrete: isDiscrete,
+      isEnabled: isEnabled,
+      additionalActiveTrackHeight: additionalActiveTrackHeight,
+    );
+    final fraction = consumedFraction.clamp(0.0, 1.0);
+    if (fraction <= 0 || (sliderTheme.trackHeight ?? 0) <= 0) return;
+
+    final track = getPreferredRect(
+      parentBox: parentBox,
+      offset: offset,
+      sliderTheme: sliderTheme,
+      isEnabled: isEnabled,
+      isDiscrete: isDiscrete,
+    );
+    final width = track.width * fraction;
+    if (width <= 0) return;
+    // Acompanha a altura extra da trilha ativa: a fatia consumida está sempre
+    // dentro dela, então as duas precisam terminar na mesma linha.
+    final grow = additionalActiveTrackHeight / 2;
+    final rtl = textDirection == TextDirection.rtl;
+    final left = rtl ? track.right - width : track.left;
+    final radius = Radius.circular(
+      (track.height + additionalActiveTrackHeight) / 2,
+    );
+    // Arredonda só a ponta inicial da trilha; a outra é um corte reto, que é o
+    // muro onde o arraste para. Quando a fatia ocupa tudo, as duas arredondam.
+    final startRadius = fraction >= 0.999 ? radius : Radius.zero;
+    context.canvas.drawRRect(
+      RRect.fromRectAndCorners(
+        Rect.fromLTWH(left, track.top - grow, width, track.height + grow * 2),
+        topLeft: rtl ? startRadius : radius,
+        bottomLeft: rtl ? startRadius : radius,
+        topRight: rtl ? radius : startRadius,
+        bottomRight: rtl ? radius : startRadius,
+      ),
+      Paint()..color = consumedColor,
+    );
+  }
 }
 
 List<_BudgetCategoryGroup> _groupBudgetItems({
@@ -706,6 +1228,7 @@ class _BudgetCategoryCard extends StatelessWidget {
     required this.isIncome,
     required this.onTapItem,
     required this.onAddSubcategory,
+    this.onSqueeze,
   });
 
   final _BudgetCategoryGroup group;
@@ -715,6 +1238,9 @@ class _BudgetCategoryCard extends StatelessWidget {
   final bool isIncome;
   final ValueChanged<LocalBudgetItem> onTapItem;
   final VoidCallback onAddSubcategory;
+
+  /// Só chega preenchido quando a categoria tem folga para apertar.
+  final VoidCallback? onSqueeze;
 
   @override
   Widget build(BuildContext context) {
@@ -789,13 +1315,24 @@ class _BudgetCategoryCard extends StatelessWidget {
                     onTap: () => onTapItem(item),
                   ),
                 const SizedBox(height: HopeSpacing.xs),
-                Align(
-                  alignment: Alignment.centerLeft,
-                  child: OutlinedButton.icon(
-                    onPressed: onAddSubcategory,
-                    icon: const Icon(Icons.add_rounded, size: 18),
-                    label: const Text('Adicionar subcategoria'),
-                  ),
+                // Wrap e não Row: em tela estreita os dois botões empilham em
+                // vez de disputar a largura.
+                Wrap(
+                  spacing: HopeSpacing.xs,
+                  runSpacing: HopeSpacing.xs,
+                  children: [
+                    OutlinedButton.icon(
+                      onPressed: onAddSubcategory,
+                      icon: const Icon(Icons.add_rounded, size: 18),
+                      label: const Text('Adicionar subcategoria'),
+                    ),
+                    if (onSqueeze != null)
+                      OutlinedButton.icon(
+                        onPressed: onSqueeze,
+                        icon: const Icon(Icons.compress_rounded, size: 18),
+                        label: const Text('Apertar previsto'),
+                      ),
+                  ],
                 ),
               ],
             ),

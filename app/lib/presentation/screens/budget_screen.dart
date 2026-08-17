@@ -6,7 +6,6 @@ import '../../core/design_system/design_tokens.dart';
 import '../../core/utils/finance_calc.dart';
 import '../../core/utils/money.dart';
 import '../../data/local/database.dart';
-import '../../data/repositories/finance_repository.dart';
 import '../components/hope_components.dart';
 import '../widgets/quick_create_category.dart';
 import '../widgets/searchable_category_field.dart';
@@ -202,6 +201,49 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
     super.dispose();
   }
 
+  /// Grava o previsto apertado assim que o dedo solta a barra.
+  ///
+  /// Não há botão de confirmar: o desfazer da snackbar é o que segura um
+  /// arraste sem querer.
+  Future<void> _applySqueeze(LocalBudgetItem item, double plannedAmount) async {
+    final repo = ref.read(financeRepositoryProvider);
+    final sync = ref.read(syncServiceProvider);
+    final messenger = ScaffoldMessenger.of(context);
+    final previous = item.plannedAmount;
+
+    Future<void> write(double amount) async {
+      await repo.upsertBudgetItem(
+        id: item.id,
+        budgetId: item.budgetId,
+        categoryId: item.categoryId,
+        subcategoryId: item.subcategoryId,
+        plannedAmount: amount,
+        isFixed: item.isFixed,
+        dueDay: item.dueDay,
+        accountId: item.accountId,
+        cardId: item.cardId,
+        currentVersion: item.version,
+      );
+      sync.syncNow();
+    }
+
+    await write(plannedAmount);
+    if (!mounted) return;
+    messenger
+      ..clearSnackBars()
+      ..showSnackBar(
+        SnackBar(
+          content: Text(
+            'Previsto: ${formatMoney(previous)} → ${formatMoney(plannedAmount)}',
+          ),
+          action: SnackBarAction(
+            label: 'Desfazer',
+            onPressed: () => write(previous),
+          ),
+        ),
+      );
+  }
+
   @override
   Widget build(BuildContext context) {
     final budget = widget.budget;
@@ -292,25 +334,19 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
     );
 
     // Aperto: só despesa, e só onde ainda existe folga entre previsto e
-    // consumido. O resumo aperta o mês inteiro; cada cartão aperta a categoria.
-    final squeezeTargets = _squeezeTargets(
-      items: expenseItems,
-      categories: categories,
-      subcategories: subcategories,
-      consumedOf: realizedOf,
-      fallbackColor: context.hopeColors.expense,
+    // consumido. O resumo apenas anuncia a folga — quem aperta é a barra de
+    // cada linha.
+    final squeezable = [
+      for (final item in expenseItems)
+        if (_hasSlack(realizedOf(item), item.plannedAmount)) item,
+    ];
+    final totalSlack = squeezable.fold<double>(
+      0,
+      (sum, item) =>
+          sum +
+          _round2(item.plannedAmount) -
+          _squeezeFloor(realizedOf(item), item.plannedAmount),
     );
-    final totalSlack = squeezeTargets.fold<double>(0, (s, t) => s + t.slack);
-    final squeezeByCategory = {
-      for (final group in filteredExpenseGroups)
-        group.categoryId: _squeezeTargets(
-          items: group.items,
-          categories: categories,
-          subcategories: subcategories,
-          consumedOf: group.realizedFor,
-          fallbackColor: context.hopeColors.expense,
-        ),
-    };
 
     return ListView(
       padding: EdgeInsets.fromLTRB(
@@ -390,27 +426,16 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
                       ),
                     ),
                   ),
-                // Primeiro a situação, depois a ação: quanto ainda sobra de
-                // folga e só então o convite para apertar.
-                if (squeezeTargets.isNotEmpty) ...[
+                // A folga é a situação; o gesto que a recolhe mora na própria
+                // barra de cada linha, então aqui só se anuncia os dois.
+                if (squeezable.isNotEmpty)
                   Padding(
                     padding: const EdgeInsets.only(top: 6),
                     child: Text(
-                      '${formatMoney(totalSlack)} de folga entre o previsto e o consumido em ${squeezeTargets.length == 1 ? '1 linha' : '${squeezeTargets.length} linhas'}',
+                      '${formatMoney(totalSlack)} de folga em ${squeezable.length == 1 ? '1 linha' : '${squeezable.length} linhas'} · arraste a ponta da barra para apertar o previsto',
                       style: Theme.of(context).textTheme.bodySmall,
                     ),
                   ),
-                  const SizedBox(height: HopeSpacing.xs),
-                  Align(
-                    alignment: Alignment.centerLeft,
-                    child: OutlinedButton.icon(
-                      onPressed: () =>
-                          _showBudgetSqueezeSheet(context, squeezeTargets),
-                      icon: const Icon(Icons.compress_rounded, size: 18),
-                      label: const Text('Apertar previsto'),
-                    ),
-                  ),
-                ],
               ],
             ),
           ),
@@ -496,13 +521,7 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
               initialCategoryId: group.categoryId,
               initialType: 'expense',
             ),
-            onSqueeze:
-                (squeezeByCategory[group.categoryId] ?? const []).isEmpty
-                ? null
-                : () => _showBudgetSqueezeSheet(
-                    context,
-                    squeezeByCategory[group.categoryId]!,
-                  ),
+            onSqueeze: _applySqueeze,
           ),
           const SizedBox(height: HopeSpacing.sm),
         ],
@@ -529,6 +548,7 @@ class _BudgetDetailState extends ConsumerState<_BudgetDetail> {
               initialCategoryId: group.categoryId,
               initialType: 'income',
             ),
+            onSqueeze: _applySqueeze,
           ),
           const SizedBox(height: HopeSpacing.sm),
         ],
@@ -565,464 +585,243 @@ void _showBudgetItemSheet(
 
 double _round2(double value) => (value * 100).roundToDouble() / 100;
 
-/// Uma linha do orçamento vista pela ótica do aperto.
-///
-/// O piso é o consumido, e não zero: o mês já gastou (ou já comprometeu) esse
+/// O consumido é o piso do aperto: o mês já gastou (ou já comprometeu) esse
 /// valor, então prever menos que isso não aperta nada — só fabrica um estouro.
-/// Aperto também não sobe o previsto; aumentar continua sendo edição do item.
-class _SqueezeTarget {
-  const _SqueezeTarget({
-    required this.item,
-    required this.categoryName,
-    required this.label,
+double _squeezeFloor(double consumed, double planned) =>
+    _round2(consumed.clamp(0, planned <= 0 ? 0 : planned));
+
+bool _hasSlack(double consumed, double planned) =>
+    _round2(planned) - _squeezeFloor(consumed, planned) >= 0.01;
+
+/// A barra de execução do orçamento que também é o controle de aperto.
+///
+/// A ponta direita é uma alça: arrastando para a esquerda o previsto encolhe
+/// até o consumido, que funciona como muro. Só o arraste horizontal mexe no
+/// valor — o toque continua subindo para a linha, que abre o formulário.
+class _SqueezeBar extends StatelessWidget {
+  const _SqueezeBar({
+    super.key,
     required this.consumed,
+    required this.value,
+    required this.scale,
     required this.color,
+    required this.consumedColor,
+    required this.height,
+    required this.label,
+    this.onDragStart,
+    this.onChanged,
+    this.onDragEnd,
   });
 
-  final LocalBudgetItem item;
-  final String categoryName;
-  final String label;
-
-  /// Realizado da linha no mês — inclui o que já está comprometido, igual à
-  /// barra que a tela mostra. O piso tem que ser o mesmo número da barra, senão
-  /// o arraste contradiz o que a pessoa está vendo.
+  /// Realizado da linha. Some com o previsto quando estoura.
   final double consumed;
+
+  /// Previsto que a barra está mostrando agora (o gravado ou o em arraste).
+  final double value;
+
+  /// Largura total da barra em reais. Fica congelada no previsto do início do
+  /// arraste, senão a régua encolheria junto com o valor e o dedo perseguiria
+  /// a própria alça.
+  final double scale;
+
+  /// Cor da alça e da fatia planejada.
   final Color color;
 
-  double get planned => _round2(item.plannedAmount);
-  double get floor => _round2(consumed.clamp(0, planned));
-  double get slack => _round2(planned - floor);
-  bool get hasSlack => slack >= 0.01;
+  /// Cor da fatia consumida. Vem de fora porque só a linha sabe se passar do
+  /// previsto é um problema (despesa) ou uma boa notícia (receita).
+  final Color consumedColor;
 
-  /// Quem nomeia a linha é o termo mais específico que ela tem: a subcategoria
-  /// quando existe, a categoria quando o item cobre a categoria inteira.
-  bool get _whole => item.subcategoryId == null;
-  String get title => _whole ? categoryName : label;
-  String get subtitle => _whole ? label : categoryName;
-}
+  final double height;
 
-/// Linhas de despesa com folga entre previsto e consumido, maior folga primeiro
-/// (é por onde vale começar a cortar).
-List<_SqueezeTarget> _squeezeTargets({
-  required List<LocalBudgetItem> items,
-  required Map<String, LocalCategory> categories,
-  required Map<String, LocalSubcategory> subcategories,
-  required double Function(LocalBudgetItem item) consumedOf,
-  required Color fallbackColor,
-}) {
-  final targets = [
-    for (final item in items)
-      _SqueezeTarget(
-        item: item,
-        categoryName: categories[item.categoryId]?.name ?? 'Categoria',
-        label: _budgetItemDisplayName(item, subcategories),
-        consumed: consumedOf(item),
-        color: _parseColor(categories[item.categoryId]?.color) ?? fallbackColor,
-      ),
-  ]..sort((a, b) => b.slack.compareTo(a.slack));
-  return [
-    for (final target in targets)
-      if (target.hasSlack) target,
-  ];
-}
+  /// Nome da linha, para leitor de tela.
+  final String label;
 
-void _showBudgetSqueezeSheet(
-  BuildContext context,
-  List<_SqueezeTarget> targets,
-) {
-  if (targets.isEmpty) {
-    ScaffoldMessenger.of(context).showSnackBar(
-      const SnackBar(
-        content: Text('Sem folga para apertar: o consumido alcançou o previsto'),
-      ),
-    );
-    return;
-  }
-  showModalBottomSheet<void>(
-    context: context,
-    isScrollControlled: true,
-    useSafeArea: true,
-    showDragHandle: true,
-    shape: const RoundedRectangleBorder(
-      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
-    ),
-    builder: (_) => _BudgetSqueezeSheet(targets: targets),
-  );
-}
+  final VoidCallback? onDragStart;
+  final ValueChanged<double>? onChanged;
+  final VoidCallback? onDragEnd;
 
-class _BudgetSqueezeSheet extends ConsumerStatefulWidget {
-  const _BudgetSqueezeSheet({required this.targets});
-
-  final List<_SqueezeTarget> targets;
-
-  @override
-  ConsumerState<_BudgetSqueezeSheet> createState() =>
-      _BudgetSqueezeSheetState();
-}
-
-class _BudgetSqueezeSheetState extends ConsumerState<_BudgetSqueezeSheet> {
-  final _formKey = GlobalKey<FormState>();
-
-  /// Previsto em edição por item. Começa no valor atual: abrir a folha não
-  /// muda nada até alguém arrastar.
-  late final Map<String, double> _planned = {
-    for (final target in widget.targets) target.item.id: target.planned,
-  };
-  bool _saving = false;
-
-  double _valueOf(_SqueezeTarget target) =>
-      _planned[target.item.id] ?? target.planned;
-
-  double get _freed => _round2(
-    widget.targets.fold<double>(
-      0,
-      (sum, target) => sum + (target.planned - _valueOf(target)),
-    ),
-  );
-
-  List<_SqueezeTarget> get _changed => [
-    for (final target in widget.targets)
-      if (_valueOf(target) != target.planned) target,
-  ];
-
-  void _set(_SqueezeTarget target, double value) {
-    final clamped = _round2(value.clamp(target.floor, target.planned));
-    if (clamped == _valueOf(target)) return;
-    setState(() => _planned[target.item.id] = clamped);
-  }
-
-  Future<void> _persist(
-    FinanceRepository repo,
-    LocalBudgetItem item,
-    double plannedAmount,
-  ) => repo.upsertBudgetItem(
-    id: item.id,
-    budgetId: item.budgetId,
-    categoryId: item.categoryId,
-    subcategoryId: item.subcategoryId,
-    plannedAmount: plannedAmount,
-    isFixed: item.isFixed,
-    dueDay: item.dueDay,
-    accountId: item.accountId,
-    cardId: item.cardId,
-    currentVersion: item.version,
-  );
-
-  Future<void> _apply() async {
-    final changed = _changed;
-    if (changed.isEmpty) return;
-    setState(() => _saving = true);
-    // Capturados antes do pop: o desfazer da snackbar sobrevive a esta folha.
-    final repo = ref.read(financeRepositoryProvider);
-    final sync = ref.read(syncServiceProvider);
-    final messenger = ScaffoldMessenger.of(context);
-    final freed = _freed;
-
-    for (final target in changed) {
-      await _persist(repo, target.item, _valueOf(target));
-    }
-    sync.syncNow();
-    if (!mounted) return;
-    Navigator.pop(context);
-    messenger.showSnackBar(
-      SnackBar(
-        content: Text('Previsto apertado: ${formatMoney(freed)} de folga'),
-        action: SnackBarAction(
-          label: 'Desfazer',
-          onPressed: () async {
-            for (final target in changed) {
-              await _persist(repo, target.item, target.planned);
-            }
-            sync.syncNow();
-          },
-        ),
-      ),
-    );
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final targets = widget.targets;
-    final freed = _freed;
-    final changedCount = _changed.length;
-
-    return PremiumFormSheet(
-      title: 'Aperto do previsto',
-      subtitle: targets.length == 1
-          ? 'Arraste até onde o mês já consumiu — o consumido é o limite.'
-          : '${targets.length} linhas com folga. Arraste cada uma até onde o mês já consumiu.',
-      icon: Icons.compress_rounded,
-      formKey: _formKey,
-      fields: [
-        for (final target in targets)
-          PremiumFormSection(
-            title: target.title,
-            subtitle: target.subtitle,
-            children: [
-              _SqueezeSlider(
-                target: target,
-                value: _valueOf(target),
-                onChanged: (value) => _set(target, value),
-              ),
-            ],
-          ),
-        if (targets.length > 1)
-          AppSurface.flat(
-            color: context.hopeColors.positiveSurface,
-            child: Row(
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        'Folga liberada',
-                        style: Theme.of(context).textTheme.labelLarge,
-                      ),
-                      Text(
-                        changedCount == 0
-                            ? 'Nenhuma linha apertada ainda'
-                            : changedCount == 1
-                            ? '1 linha apertada'
-                            : '$changedCount linhas apertadas',
-                        style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                          color: Theme.of(context).colorScheme.onSurfaceVariant,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: HopeSpacing.sm),
-                MoneyText(
-                  freed,
-                  emphasis: MoneyEmphasis.primary,
-                  color: freed >= 0.01 ? context.hopeColors.success : null,
-                  semanticsPrefix: 'Folga liberada',
-                ),
-              ],
-            ),
-          ),
-      ],
-      secondaryAction: OutlinedButton(
-        onPressed: _saving ? null : () => Navigator.pop(context),
-        child: const Text('Cancelar'),
-      ),
-      primaryAction: FilledButton.icon(
-        onPressed: _saving || freed < 0.01 ? null : _apply,
-        icon: const Icon(Icons.compress_rounded),
-        label: Text(
-          freed < 0.01
-              ? 'Arraste para apertar'
-              : 'Apertar ${formatMoney(freed)}',
-        ),
-      ),
-    );
-  }
-}
-
-/// A barra de arraste do aperto.
-///
-/// A escala é o previsto original inteiro (0 → previsto), então a fatia já
-/// consumida aparece no mesmo tamanho que tem na barra da lista. O polegar
-/// trava nessa fatia: é o limite anunciado pelo recurso, não um erro.
-class _SqueezeSlider extends StatelessWidget {
-  const _SqueezeSlider({
-    required this.target,
-    required this.value,
-    required this.onChanged,
-  });
-
-  final _SqueezeTarget target;
-  final double value;
-  final ValueChanged<double> onChanged;
+  bool get _enabled => onChanged != null && _hasSlack(consumed, scale);
 
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final colors = context.hopeColors;
-    final muted = theme.colorScheme.onSurfaceVariant;
-    final freed = _round2(target.planned - value);
-    final squeezed = freed >= 0.01;
-    final consumedFraction = target.planned <= 0
-        ? 0.0
-        : target.floor / target.planned;
+    final floor = _squeezeFloor(consumed, scale);
+    final safeScale = scale <= 0 ? 1.0 : scale;
+    final step = (safeScale / 20).clamp(0.01, double.infinity);
 
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: [
-        Row(
-          children: [
-            Expanded(
-              child: Text(
-                'Novo previsto',
-                style: theme.textTheme.bodySmall?.copyWith(color: muted),
+    double toValue(double dx, double width) =>
+        _round2(((dx / width) * safeScale).clamp(floor, safeScale));
+
+    // Alvo de arraste confortável sem engordar a linha: a área sensível tem
+    // 24 px, a barra desenhada continua fina.
+    final bar = LayoutBuilder(
+      builder: (context, constraints) {
+        final width = constraints.maxWidth;
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onHorizontalDragStart: !_enabled
+              ? null
+              : (details) {
+                  onDragStart?.call();
+                  onChanged!(toValue(details.localPosition.dx, width));
+                },
+          onHorizontalDragUpdate: !_enabled
+              ? null
+              : (details) => onChanged!(toValue(details.localPosition.dx, width)),
+          onHorizontalDragEnd: !_enabled ? null : (_) => onDragEnd?.call(),
+          onHorizontalDragCancel: !_enabled ? null : onDragEnd,
+          child: SizedBox(
+            height: 24,
+            child: Center(
+              child: SizedBox(
+                height: height,
+                width: double.infinity,
+                child: CustomPaint(
+                  painter: _SqueezeBarPainter(
+                    consumedFraction: (consumed / safeScale).clamp(0.0, 1.0),
+                    valueFraction: (value / safeScale).clamp(0.0, 1.0),
+                    trackColor: theme.colorScheme.surfaceContainerHigh,
+                    consumedColor: consumedColor,
+                    freedColor: colors.success.withValues(alpha: 0.30),
+                    handleColor: _enabled ? color : Colors.transparent,
+                  ),
+                ),
               ),
             ),
-            MoneyText(
-              value,
-              emphasis: MoneyEmphasis.primary,
-              color: squeezed ? colors.success : null,
-              semanticsPrefix: 'Novo previsto de ${target.title}',
-            ),
-          ],
-        ),
-        SliderTheme(
-          data: SliderTheme.of(context).copyWith(
-            trackHeight: 12,
-            trackShape: _ConsumedFloorTrackShape(
-              consumedFraction: consumedFraction,
-              consumedColor: colors.expense,
-            ),
-            activeTrackColor: target.color.withValues(alpha: 0.38),
-            inactiveTrackColor: theme.colorScheme.surfaceContainerHighest,
-            thumbColor: theme.colorScheme.primary,
-            overlayColor: theme.colorScheme.primary.withValues(alpha: 0.12),
-            thumbShape: const RoundSliderThumbShape(
-              enabledThumbRadius: 11,
-              elevation: 0,
-              pressedElevation: 0,
-            ),
-            overlayShape: const RoundSliderOverlayShape(overlayRadius: 24),
           ),
-          child: Slider(
-            value: value.clamp(0, target.planned),
-            max: target.planned,
-            // O piso é aplicado no callback, num lugar só: teclado, leitor de
-            // tela e arraste travam no mesmo ponto.
-            onChanged: onChanged,
-            semanticFormatterCallback: moneySemanticLabel,
-          ),
-        ),
-        Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Text(
-                    'Consumido',
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                  ),
-                  // O cadeado fica junto do número, não do rótulo: é o valor
-                  // que está travado.
-                  Row(
-                    children: [
-                      Icon(Icons.lock_outline, size: 13, color: colors.expense),
-                      const SizedBox(width: HopeSpacing.xxs),
-                      Flexible(
-                        child: MoneyText(
-                          target.floor,
-                          emphasis: MoneyEmphasis.caption,
-                          color: colors.expense,
-                          semanticsPrefix: 'Consumido',
-                        ),
-                      ),
-                    ],
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(width: HopeSpacing.sm),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.end,
-                children: [
-                  Text(
-                    squeezed ? 'Libera' : 'Previsto atual',
-                    style: theme.textTheme.bodySmall?.copyWith(color: muted),
-                  ),
-                  MoneyText(
-                    squeezed ? freed : target.planned,
-                    emphasis: MoneyEmphasis.caption,
-                    color: squeezed ? colors.success : muted,
-                    textAlign: TextAlign.end,
-                    semanticsPrefix: squeezed ? 'Libera' : 'Previsto atual',
-                  ),
-                ],
-              ),
-            ),
-          ],
-        ),
-      ],
+        );
+      },
+    );
+
+    if (!_enabled) return bar;
+    return Semantics(
+      slider: true,
+      label: 'Previsto de $label',
+      value: formatMoney(value),
+      increasedValue: formatMoney((value + step).clamp(floor, safeScale)),
+      decreasedValue: formatMoney((value - step).clamp(floor, safeScale)),
+      // Sem gesto: quem usa leitor de tela ou teclado aperta em degraus, e
+      // cada degrau grava sozinho (não existe "soltar" aqui).
+      onIncrease: value >= safeScale
+          ? null
+          : () {
+              onChanged!(_round2((value + step).clamp(floor, safeScale)));
+              onDragEnd?.call();
+            },
+      onDecrease: value <= floor
+          ? null
+          : () {
+              onChanged!(_round2((value - step).clamp(floor, safeScale)));
+              onDragEnd?.call();
+            },
+      child: ExcludeSemantics(child: bar),
     );
   }
 }
 
-/// Trilha que pinta a fatia já consumida do previsto.
-///
-/// Sem ela a barra não explica por que o polegar travou no meio do caminho.
-class _ConsumedFloorTrackShape extends RoundedRectSliderTrackShape {
-  const _ConsumedFloorTrackShape({
+class _SqueezeBarPainter extends CustomPainter {
+  const _SqueezeBarPainter({
     required this.consumedFraction,
+    required this.valueFraction,
+    required this.trackColor,
     required this.consumedColor,
+    required this.freedColor,
+    required this.handleColor,
   });
 
   final double consumedFraction;
+  final double valueFraction;
+  final Color trackColor;
   final Color consumedColor;
 
-  @override
-  void paint(
-    PaintingContext context,
-    Offset offset, {
-    required RenderBox parentBox,
-    required SliderThemeData sliderTheme,
-    required Animation<double> enableAnimation,
-    required TextDirection textDirection,
-    required Offset thumbCenter,
-    Offset? secondaryOffset,
-    bool isDiscrete = false,
-    bool isEnabled = false,
-    double additionalActiveTrackHeight = 2,
-  }) {
-    super.paint(
-      context,
-      offset,
-      parentBox: parentBox,
-      sliderTheme: sliderTheme,
-      enableAnimation: enableAnimation,
-      textDirection: textDirection,
-      thumbCenter: thumbCenter,
-      secondaryOffset: secondaryOffset,
-      isDiscrete: isDiscrete,
-      isEnabled: isEnabled,
-      additionalActiveTrackHeight: additionalActiveTrackHeight,
-    );
-    final fraction = consumedFraction.clamp(0.0, 1.0);
-    if (fraction <= 0 || (sliderTheme.trackHeight ?? 0) <= 0) return;
+  /// Faixa entre o previsto em arraste e o previsto original: o que o aperto
+  /// está devolvendo.
+  final Color freedColor;
+  final Color handleColor;
 
-    final track = getPreferredRect(
-      parentBox: parentBox,
-      offset: offset,
-      sliderTheme: sliderTheme,
-      isEnabled: isEnabled,
-      isDiscrete: isDiscrete,
-    );
-    final width = track.width * fraction;
-    if (width <= 0) return;
-    // Acompanha a altura extra da trilha ativa: a fatia consumida está sempre
-    // dentro dela, então as duas precisam terminar na mesma linha.
-    final grow = additionalActiveTrackHeight / 2;
-    final rtl = textDirection == TextDirection.rtl;
-    final left = rtl ? track.right - width : track.left;
-    final radius = Radius.circular(
-      (track.height + additionalActiveTrackHeight) / 2,
-    );
-    // Arredonda só a ponta inicial da trilha; a outra é um corte reto, que é o
-    // muro onde o arraste para. Quando a fatia ocupa tudo, as duas arredondam.
-    final startRadius = fraction >= 0.999 ? radius : Radius.zero;
-    context.canvas.drawRRect(
-      RRect.fromRectAndCorners(
-        Rect.fromLTWH(left, track.top - grow, width, track.height + grow * 2),
-        topLeft: rtl ? startRadius : radius,
-        bottomLeft: rtl ? startRadius : radius,
-        topRight: rtl ? radius : startRadius,
-        bottomRight: rtl ? radius : startRadius,
+  @override
+  void paint(Canvas canvas, Size size) {
+    final radius = Radius.circular(size.height / 2);
+    final track = RRect.fromRectAndRadius(Offset.zero & size, radius);
+    canvas.drawRRect(track, Paint()..color = trackColor);
+
+    canvas.save();
+    canvas.clipRRect(track);
+    if (valueFraction < 1) {
+      canvas.drawRect(
+        Rect.fromLTRB(size.width * valueFraction, 0, size.width, size.height),
+        Paint()..color = freedColor,
+      );
+    }
+    final consumed = size.width * consumedFraction;
+    if (consumed > 0) {
+      canvas.drawRect(
+        Rect.fromLTWH(0, 0, consumed, size.height),
+        Paint()..color = consumedColor,
+      );
+    }
+    canvas.restore();
+
+    if (handleColor.a == 0) return;
+    // A alça estoura a altura da barra de propósito: é o que a anuncia como
+    // pegável em vez de decoração da própria trilha.
+    final handleHeight = size.height + 10;
+    final center = (size.width * valueFraction).clamp(3.0, size.width - 3.0);
+    canvas.drawRRect(
+      RRect.fromRectAndRadius(
+        Rect.fromCenter(
+          center: Offset(center, size.height / 2),
+          width: 6,
+          height: handleHeight,
+        ),
+        const Radius.circular(3),
       ),
-      Paint()..color = consumedColor,
+      Paint()..color = handleColor,
     );
+  }
+
+  @override
+  bool shouldRepaint(_SqueezeBarPainter old) =>
+      old.consumedFraction != consumedFraction ||
+      old.valueFraction != valueFraction ||
+      old.trackColor != trackColor ||
+      old.consumedColor != consumedColor ||
+      old.freedColor != freedColor ||
+      old.handleColor != handleColor;
+}
+
+/// Estado de um aperto em andamento: o valor sendo arrastado e a régua
+/// congelada no previsto de quando o dedo encostou.
+mixin _SqueezeDrag<T extends StatefulWidget> on State<T> {
+  double? pendingPlanned;
+  double? dragScale;
+
+  double get committedPlanned;
+
+  double get effectivePlanned => pendingPlanned ?? committedPlanned;
+  double get squeezeScale => dragScale ?? effectivePlanned;
+
+  void startSqueeze() => setState(() => dragScale = committedPlanned);
+
+  void updateSqueeze(double value) => setState(() => pendingPlanned = value);
+
+  /// Devolve o valor a gravar, ou null quando o arraste não mudou nada.
+  double? endSqueeze() {
+    final value = pendingPlanned;
+    setState(() => dragScale = null);
+    if (value == null || value == committedPlanned) {
+      setState(() => pendingPlanned = null);
+      return null;
+    }
+    return value;
+  }
+
+  /// O valor gravado chegou (ou foi desfeito): a fonte da verdade reassume.
+  void syncSqueeze(double previous) {
+    if (previous != committedPlanned && pendingPlanned != null) {
+      setState(() => pendingPlanned = null);
+    }
   }
 }
 
@@ -1219,7 +1018,7 @@ class _BudgetCategoryGroup {
       realizedByItemKey[_budgetItemKey(item)] ?? 0;
 }
 
-class _BudgetCategoryCard extends StatelessWidget {
+class _BudgetCategoryCard extends StatefulWidget {
   const _BudgetCategoryCard({
     required this.group,
     required this.subcategories,
@@ -1228,7 +1027,7 @@ class _BudgetCategoryCard extends StatelessWidget {
     required this.isIncome,
     required this.onTapItem,
     required this.onAddSubcategory,
-    this.onSqueeze,
+    required this.onSqueeze,
   });
 
   final _BudgetCategoryGroup group;
@@ -1238,13 +1037,44 @@ class _BudgetCategoryCard extends StatelessWidget {
   final bool isIncome;
   final ValueChanged<LocalBudgetItem> onTapItem;
   final VoidCallback onAddSubcategory;
+  final void Function(LocalBudgetItem item, double plannedAmount) onSqueeze;
 
-  /// Só chega preenchido quando a categoria tem folga para apertar.
-  final VoidCallback? onSqueeze;
+  @override
+  State<_BudgetCategoryCard> createState() => _BudgetCategoryCardState();
+}
+
+class _BudgetCategoryCardState extends State<_BudgetCategoryCard>
+    with _SqueezeDrag<_BudgetCategoryCard> {
+  /// A barra do cabeçalho soma várias linhas. Ela só vira alça quando a
+  /// categoria tem uma linha só — aí o número da barra e o do item são o mesmo,
+  /// e não há como o arraste ser ambíguo.
+  LocalBudgetItem? get _soleItem =>
+      widget.isIncome || widget.group.items.length != 1
+      ? null
+      : widget.group.items.first;
+
+  @override
+  double get committedPlanned => widget.group.planned;
+
+  @override
+  void didUpdateWidget(_BudgetCategoryCard old) {
+    super.didUpdateWidget(old);
+    syncSqueeze(old.group.planned);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final over = !isIncome && group.realized > group.planned;
+    final group = widget.group;
+    final isIncome = widget.isIncome;
+    final subcategories = widget.subcategories;
+    final accounts = widget.accounts;
+    final cards = widget.cards;
+    final onTapItem = widget.onTapItem;
+    final onAddSubcategory = widget.onAddSubcategory;
+
+    final sole = _soleItem;
+    final planned = sole == null ? group.planned : effectivePlanned;
+    final over = !isIncome && group.realized > planned;
     final color =
         _parseColor(group.category?.color) ??
         (isIncome ? context.hopeColors.income : context.hopeColors.expense);
@@ -1269,7 +1099,7 @@ class _BudgetCategoryCard extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text(
-                '$subcategoryText · ${formatMoney(group.realized)} de ${formatMoney(group.planned)}',
+                '$subcategoryText · ${formatMoney(group.realized)} de ${formatMoney(planned)}',
                 maxLines: 1,
                 overflow: TextOverflow.ellipsis,
                 style: Theme.of(context).textTheme.bodySmall?.copyWith(
@@ -1277,12 +1107,27 @@ class _BudgetCategoryCard extends StatelessWidget {
                   fontWeight: FontWeight.w600,
                 ),
               ),
-              const SizedBox(height: 6),
-              LinearProgressIndicator(
-                value: clampProgress(group.realized, group.planned),
-                minHeight: 6,
-                borderRadius: BorderRadius.circular(3),
-                color: over ? context.hopeColors.expense : color,
+              _SqueezeBar(
+                // Chave própria: com a categoria aberta, esta barra e a da
+                // linha controlam o mesmo item e não podem se confundir.
+                key: sole == null
+                    ? null
+                    : ValueKey('budget-squeeze-head-${sole.id}'),
+                consumed: group.realized,
+                value: planned,
+                scale: sole == null ? group.planned : squeezeScale,
+                color: color,
+                consumedColor: over ? context.hopeColors.expense : color,
+                height: 6,
+                label: group.name,
+                onDragStart: sole == null ? null : startSqueeze,
+                onChanged: sole == null ? null : updateSqueeze,
+                onDragEnd: sole == null
+                    ? null
+                    : () {
+                        final value = endSqueeze();
+                        if (value != null) widget.onSqueeze(sole, value);
+                      },
               ),
             ],
           ),
@@ -1301,6 +1146,7 @@ class _BudgetCategoryCard extends StatelessWidget {
               children: [
                 for (final item in group.items)
                   _BudgetItemRow(
+                    key: ValueKey('budget-item-${item.id}'),
                     item: item,
                     subcategory: item.subcategoryId == null
                         ? null
@@ -1313,26 +1159,16 @@ class _BudgetCategoryCard extends StatelessWidget {
                     color: color,
                     realized: group.realizedFor(item),
                     onTap: () => onTapItem(item),
+                    onSqueeze: (value) => widget.onSqueeze(item, value),
                   ),
                 const SizedBox(height: HopeSpacing.xs),
-                // Wrap e não Row: em tela estreita os dois botões empilham em
-                // vez de disputar a largura.
-                Wrap(
-                  spacing: HopeSpacing.xs,
-                  runSpacing: HopeSpacing.xs,
-                  children: [
-                    OutlinedButton.icon(
-                      onPressed: onAddSubcategory,
-                      icon: const Icon(Icons.add_rounded, size: 18),
-                      label: const Text('Adicionar subcategoria'),
-                    ),
-                    if (onSqueeze != null)
-                      OutlinedButton.icon(
-                        onPressed: onSqueeze,
-                        icon: const Icon(Icons.compress_rounded, size: 18),
-                        label: const Text('Apertar previsto'),
-                      ),
-                  ],
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: OutlinedButton.icon(
+                    onPressed: onAddSubcategory,
+                    icon: const Icon(Icons.add_rounded, size: 18),
+                    label: const Text('Adicionar subcategoria'),
+                  ),
                 ),
               ],
             ),
@@ -1343,8 +1179,9 @@ class _BudgetCategoryCard extends StatelessWidget {
   }
 }
 
-class _BudgetItemRow extends StatelessWidget {
+class _BudgetItemRow extends StatefulWidget {
   const _BudgetItemRow({
+    super.key,
     required this.item,
     required this.subcategory,
     required this.account,
@@ -1353,6 +1190,7 @@ class _BudgetItemRow extends StatelessWidget {
     required this.color,
     required this.realized,
     required this.onTap,
+    required this.onSqueeze,
   });
 
   final LocalBudgetItem item;
@@ -1363,10 +1201,36 @@ class _BudgetItemRow extends StatelessWidget {
   final Color color;
   final double realized;
   final VoidCallback onTap;
+  final ValueChanged<double> onSqueeze;
+
+  @override
+  State<_BudgetItemRow> createState() => _BudgetItemRowState();
+}
+
+class _BudgetItemRowState extends State<_BudgetItemRow>
+    with _SqueezeDrag<_BudgetItemRow> {
+  @override
+  double get committedPlanned => widget.item.plannedAmount;
+
+  @override
+  void didUpdateWidget(_BudgetItemRow old) {
+    super.didUpdateWidget(old);
+    syncSqueeze(old.item.plannedAmount);
+  }
 
   @override
   Widget build(BuildContext context) {
-    final over = !isIncome && realized > item.plannedAmount;
+    final item = widget.item;
+    final subcategory = widget.subcategory;
+    final account = widget.account;
+    final card = widget.card;
+    final isIncome = widget.isIncome;
+    final color = widget.color;
+    final realized = widget.realized;
+
+    final planned = effectivePlanned;
+    final squeezing = pendingPlanned != null;
+    final over = !isIncome && realized > planned;
     final title = subcategory?.name ?? 'Toda a categoria';
     final fixedText = item.isFixed
         ? item.dueDay == null
@@ -1374,19 +1238,19 @@ class _BudgetItemRow extends StatelessWidget {
               : 'Fixa · dia ${item.dueDay}'
         : null;
     final destinationText = card != null
-        ? 'Cartão 💳 ${card!.name}'
+        ? 'Cartão 💳 ${card.name}'
         : account == null
         ? null
         : isIncome
-        ? 'Entra em ${account!.name}'
-        : 'Sai de ${account!.name}';
+        ? 'Entra em ${account.name}'
+        : 'Sai de ${account.name}';
     final details = [?fixedText, ?destinationText].join(' · ');
 
     return InkWell(
-      onTap: onTap,
+      onTap: widget.onTap,
       borderRadius: BorderRadius.circular(HopeRadius.sm),
       child: Padding(
-        padding: const EdgeInsets.symmetric(vertical: 10),
+        padding: const EdgeInsets.symmetric(vertical: 4),
         child: Column(
           children: [
             Row(
@@ -1430,24 +1294,39 @@ class _BudgetItemRow extends StatelessWidget {
                 ConstrainedBox(
                   constraints: const BoxConstraints(maxWidth: 148),
                   child: Text(
-                    '${formatMoney(realized)} / ${formatMoney(item.plannedAmount)}',
+                    '${formatMoney(realized)} / ${formatMoney(planned)}',
                     maxLines: 2,
                     overflow: TextOverflow.ellipsis,
                     textAlign: TextAlign.end,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
                       fontWeight: FontWeight.w700,
-                      color: over ? context.hopeColors.expense : null,
+                      color: over
+                          ? context.hopeColors.expense
+                          : squeezing
+                          ? context.hopeColors.success
+                          : null,
                     ),
                   ),
                 ),
               ],
             ),
-            const SizedBox(height: 8),
-            LinearProgressIndicator(
-              value: clampProgress(realized, item.plannedAmount),
-              minHeight: 4,
-              borderRadius: BorderRadius.circular(2),
-              color: over ? context.hopeColors.expense : color,
+            _SqueezeBar(
+              key: ValueKey('budget-squeeze-${item.id}'),
+              consumed: realized,
+              value: planned,
+              scale: squeezeScale,
+              color: color,
+              consumedColor: over ? context.hopeColors.expense : color,
+              height: 4,
+              label: title,
+              onDragStart: isIncome ? null : startSqueeze,
+              onChanged: isIncome ? null : updateSqueeze,
+              onDragEnd: isIncome
+                  ? null
+                  : () {
+                      final value = endSqueeze();
+                      if (value != null) widget.onSqueeze(value);
+                    },
             ),
           ],
         ),

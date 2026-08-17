@@ -12,11 +12,10 @@ import 'package:hopecash/core/utils/money.dart';
 import 'package:hopecash/data/local/database.dart';
 import 'package:hopecash/data/remote/api_client.dart';
 import 'package:hopecash/data/repositories/finance_repository.dart';
-import 'package:hopecash/presentation/components/hope_components.dart';
 import 'package:hopecash/presentation/screens/budget_screen.dart';
 
-/// Aperto do previsto: arrastar a barra reduz o orçamento de uma linha até o
-/// que o mês já consumiu, e nunca abaixo disso.
+/// Aperto do previsto: a própria barra de execução é a alça. Arrastar para a
+/// esquerda encolhe o previsto da linha até o consumido, e nunca abaixo dele.
 class _ApiAdapter implements HttpClientAdapter {
   @override
   Future<ResponseBody> fetch(
@@ -71,29 +70,36 @@ void main() {
 
   tearDown(() => db.close());
 
-  Future<void> planned(double amount) async {
-    final budgetId = await repo.createBudget(referenceMonth: month);
-    await repo.upsertBudgetItem(
+  Future<String> planned(double amount, {String? subcategoryId}) async {
+    final budgetId =
+        (await (db.select(db.localBudgets)
+              ..where((b) => b.deletedAt.isNull()))
+            .get()).firstOrNull?.id ??
+        await repo.createBudget(referenceMonth: month);
+    return repo.upsertBudgetItem(
       budgetId: budgetId,
       categoryId: categoryId,
+      subcategoryId: subcategoryId,
       plannedAmount: amount,
     );
   }
 
-  Future<void> consumed(double amount) => repo.addTransaction(
-    type: 'expense',
-    description: 'Mercado',
-    amount: amount,
-    date: todayIso(),
-    isPaid: true,
-    accountId: 'acc-1',
-    categoryId: categoryId,
-  );
+  Future<void> consumed(double amount, {String? subcategoryId}) =>
+      repo.addTransaction(
+        type: 'expense',
+        description: 'Mercado',
+        amount: amount,
+        date: todayIso(),
+        isPaid: true,
+        accountId: 'acc-1',
+        categoryId: categoryId,
+        subcategoryId: subcategoryId,
+      );
 
-  Future<double> storedPlanned() async {
+  Future<double> storedPlanned(String itemId) async {
     final item = await (db.select(
       db.localBudgetItems,
-    )..where((i) => i.deletedAt.isNull())).getSingle();
+    )..where((i) => i.id.equals(itemId))).getSingle();
     return item.plannedAmount;
   }
 
@@ -113,80 +119,123 @@ void main() {
     }
   }
 
-  testWidgets('arrasto trava no consumido e grava o previsto apertado', (
+  Finder barOf(String itemId) => find.byKey(ValueKey('budget-squeeze-$itemId'));
+  Finder headBarOf(String itemId) =>
+      find.byKey(ValueKey('budget-squeeze-head-$itemId'));
+
+  /// Arrasta a barra até a fração pedida da própria largura. O primeiro passo
+  /// existe só para vencer o slop de toque e virar arraste de verdade.
+  Future<void> dragBarTo(
+    WidgetTester tester,
+    Finder bar,
+    double fraction,
+  ) async {
+    final rect = tester.getRect(bar);
+    final gesture = await tester.startGesture(rect.center);
+    await gesture.moveBy(const Offset(-60, 0));
+    await tester.pump();
+    await gesture.moveTo(
+      Offset(rect.left + rect.width * fraction, rect.center.dy),
+    );
+    await tester.pump();
+    await gesture.up();
+    await tester.pumpAndSettle();
+  }
+
+  testWidgets('arrastar a barra da categoria grava o previsto apertado', (
     tester,
   ) async {
-    await planned(800);
+    final itemId = await planned(800);
     await consumed(300);
 
     await tester.pumpWidget(app());
     await settle(tester);
 
-    // A situação aparece antes da ação: R$ 500,00 de folga em 1 linha.
+    // A folga é anunciada com o gesto que a recolhe.
     expect(
       find.textContaining('${formatMoney(500)} de folga'),
       findsOneWidget,
     );
-
-    await tester.tap(find.text('Apertar previsto'));
-    await tester.pumpAndSettle();
-    expect(find.text('Aperto do previsto'), findsOneWidget);
-    expect(find.text('Arraste para apertar'), findsOneWidget);
-
-    // Arrasto bem além do piso: o valor tem que parar no consumido.
-    await tester.drag(find.byType(Slider), const Offset(-2000, 0));
-    await tester.pumpAndSettle();
-
-    // R$ 300,00 duas vezes: o novo previsto encostou no consumido.
-    expect(find.text(formatMoney(300)), findsNWidgets(2));
-    expect(
-      find.widgetWithText(FilledButton, 'Apertar ${formatMoney(500)}'),
-      findsOneWidget,
-    );
-
-    await tester.tap(find.text('Apertar ${formatMoney(500)}'));
-    await tester.pumpAndSettle();
-
-    expect(await storedPlanned(), 300);
-    // Sem folga sobrando, o convite para apertar sai da tela.
+    expect(find.textContaining('arraste a ponta da barra'), findsOneWidget);
+    // Nada de botão nem de folha: o controle é a própria barra.
     expect(find.text('Apertar previsto'), findsNothing);
+
+    // Metade da régua (o previsto original de R$ 800,00).
+    await dragBarTo(tester, headBarOf(itemId), 0.5);
+
+    expect(await storedPlanned(itemId), 400);
+    expect(find.text('Desfazer'), findsOneWidget);
 
     await disposeApp(tester);
   });
 
-  testWidgets('cancelar não grava o arrasto', (tester) async {
-    await planned(800);
+  testWidgets('o consumido é um muro: arrastar além dele para no piso', (
+    tester,
+  ) async {
+    final itemId = await planned(800);
     await consumed(300);
 
     await tester.pumpWidget(app());
     await settle(tester);
 
-    await tester.tap(find.text('Apertar previsto'));
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(Slider), const Offset(-2000, 0));
-    await tester.pumpAndSettle();
-    await tester.tap(find.text('Cancelar'));
-    await tester.pumpAndSettle();
+    await dragBarTo(tester, headBarOf(itemId), -0.5);
 
-    expect(await storedPlanned(), 800);
+    expect(await storedPlanned(itemId), 300);
 
     await disposeApp(tester);
   });
 
-  testWidgets('linha sem folga não oferece aperto', (tester) async {
-    await planned(800);
+  testWidgets('desfazer devolve o previsto anterior', (tester) async {
+    final itemId = await planned(800);
+    await consumed(300);
+
+    await tester.pumpWidget(app());
+    await settle(tester);
+    await dragBarTo(tester, headBarOf(itemId), 0.5);
+    expect(await storedPlanned(itemId), 400);
+
+    await tester.tap(find.text('Desfazer'));
+    await settle(tester);
+
+    expect(await storedPlanned(itemId), 800);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('linha sem folga não se mexe', (tester) async {
+    final itemId = await planned(800);
     await consumed(820);
 
     await tester.pumpWidget(app());
     await settle(tester);
 
-    expect(find.text('Apertar previsto'), findsNothing);
     expect(find.textContaining('de folga'), findsNothing);
+    await dragBarTo(tester, headBarOf(itemId), 0.3);
+
+    expect(await storedPlanned(itemId), 800);
 
     await disposeApp(tester);
   });
 
-  testWidgets('aperto pela categoria trata as subcategorias juntas', (
+  testWidgets('toque na linha continua abrindo o formulário', (tester) async {
+    await planned(800);
+    await consumed(300);
+
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    await tester.tap(find.text('Alimentação'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Toda a categoria').first);
+    await tester.pumpAndSettle();
+
+    expect(find.text('Editar item'), findsOneWidget);
+    expect(find.text('Valor previsto'), findsOneWidget);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('subcategoria tem a própria barra dentro do cartão', (
     tester,
   ) async {
     await repo.upsertSubcategory(
@@ -199,96 +248,64 @@ void main() {
       categoryId: categoryId,
       name: 'Delivery',
     );
-    final budgetId = await repo.createBudget(referenceMonth: month);
-    await repo.upsertBudgetItem(
-      budgetId: budgetId,
-      categoryId: categoryId,
-      subcategoryId: 'sub-market',
-      plannedAmount: 600,
-    );
-    await repo.upsertBudgetItem(
-      budgetId: budgetId,
-      categoryId: categoryId,
-      subcategoryId: 'sub-delivery',
-      plannedAmount: 400,
-    );
-    await repo.addTransaction(
-      type: 'expense',
-      description: 'Feira',
-      amount: 200,
-      date: todayIso(),
-      isPaid: true,
-      accountId: 'acc-1',
-      categoryId: categoryId,
-      subcategoryId: 'sub-market',
-    );
+    final marketId = await planned(600, subcategoryId: 'sub-market');
+    final deliveryId = await planned(400, subcategoryId: 'sub-delivery');
+    await consumed(200, subcategoryId: 'sub-market');
 
     await tester.pumpWidget(app());
     await settle(tester);
 
-    // Entrada pelo cartão da categoria (a última das duas, já que o resumo do
-    // mês também oferece o aperto).
+    // Com duas linhas, a barra do cabeçalho é só leitura — o arraste seria
+    // ambíguo. Quem aperta é a barra de cada subcategoria.
     await tester.tap(find.text('Alimentação'));
     await tester.pumpAndSettle();
-    final cardAction = find.widgetWithText(OutlinedButton, 'Apertar previsto');
-    await tester.ensureVisible(cardAction.last);
+
+    await tester.ensureVisible(barOf(marketId));
     await tester.pumpAndSettle();
-    await tester.tap(cardAction.last);
-    await tester.pumpAndSettle();
+    await dragBarTo(tester, barOf(marketId), 0.5);
 
-    // Uma seção por item — os mesmos nomes também estão na lista atrás da
-    // folha, então a busca se limita às seções da folha.
-    Finder inSheet(String text) => find.descendant(
-      of: find.byType(PremiumFormSection),
-      matching: find.text(text),
-    );
-    expect(inSheet('Delivery'), findsOneWidget);
-    expect(inSheet('Mercado'), findsOneWidget);
-
-    for (final slider in [0, 1]) {
-      await tester.drag(find.byType(Slider).at(slider), const Offset(-2000, 0));
-      await tester.pumpAndSettle();
-    }
-
-    // 400 de Delivery + 400 de folga do Mercado. O total e o botão ficam abaixo
-    // das duas barras: a folha rola até eles.
-    final label = 'Apertar ${formatMoney(800)}';
-    await tester.scrollUntilVisible(
-      find.text(label),
-      200,
-      scrollable: find.byType(Scrollable).last,
-    );
-    expect(find.text('Folga liberada'), findsOneWidget);
-    expect(find.text('2 linhas apertadas'), findsOneWidget);
-    await tester.tap(find.text(label));
-    await tester.pumpAndSettle();
-
-    final items = await (db.select(
-      db.localBudgetItems,
-    )..where((i) => i.deletedAt.isNull())).get();
-    expect(
-      {for (final item in items) item.subcategoryId: item.plannedAmount},
-      {'sub-market': 200.0, 'sub-delivery': 0.0},
-    );
+    expect(await storedPlanned(marketId), 300);
+    expect(await storedPlanned(deliveryId), 400);
 
     await disposeApp(tester);
   });
 
-  testWidgets('a folha do aperto cabe em tela estreita', (tester) async {
-    await tester.binding.setSurfaceSize(const Size(320, 640));
-    addTearDown(() => tester.binding.setSurfaceSize(null));
-    await planned(1234.56);
-    await consumed(345.67);
+  testWidgets('barra da linha aperta a mesma categoria de dentro do cartão', (
+    tester,
+  ) async {
+    final itemId = await planned(800);
+    await consumed(300);
 
     await tester.pumpWidget(app());
     await settle(tester);
 
-    await tester.tap(find.text('Apertar previsto'));
-    await tester.pumpAndSettle();
-    await tester.drag(find.byType(Slider), const Offset(-40, 0));
+    await tester.tap(find.text('Alimentação'));
     await tester.pumpAndSettle();
 
-    expect(find.text('Aperto do previsto'), findsOneWidget);
+    // Cartão aberto: cabeçalho e linha controlam o mesmo item, com chaves
+    // distintas. Arrastar a de dentro grava igual.
+    expect(headBarOf(itemId), findsOneWidget);
+    await tester.ensureVisible(barOf(itemId));
+    await tester.pumpAndSettle();
+    await dragBarTo(tester, barOf(itemId), 0.75);
+
+    expect(await storedPlanned(itemId), 600);
+
+    await disposeApp(tester);
+  });
+
+  testWidgets('a barra cabe e responde em tela estreita', (tester) async {
+    await tester.binding.setSurfaceSize(const Size(320, 640));
+    addTearDown(() => tester.binding.setSurfaceSize(null));
+    final itemId = await planned(1000);
+    await consumed(250);
+
+    await tester.pumpWidget(app());
+    await settle(tester);
+
+    await dragBarTo(tester, headBarOf(itemId), 0.6);
+
+    expect(await storedPlanned(itemId), 600);
     expect(tester.takeException(), isNull);
 
     await disposeApp(tester);

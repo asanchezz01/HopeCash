@@ -1,4 +1,5 @@
 import 'package:flutter/cupertino.dart' show CupertinoPageTransitionsBuilder;
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter/material.dart';
 
 import '../design_system/design_tokens.dart';
@@ -36,8 +37,10 @@ class AppTheme {
   static const income = success;
   static const expense = danger;
 
-  static ThemeData light() => _base(Brightness.light);
-  static ThemeData dark() => _base(Brightness.dark);
+  static ThemeData light({TargetPlatform? platform}) =>
+      _base(Brightness.light, platform: platform);
+  static ThemeData dark({TargetPlatform? platform}) =>
+      _base(Brightness.dark, platform: platform);
 
   /// Escala tipográfica explícita.
   ///
@@ -45,19 +48,25 @@ class AppTheme {
   /// negativo (senão parecem soltos) e os rótulos pequenos recebem tracking
   /// positivo (senão fecham demais). O app mostra muito texto de apoio em
   /// 11–13px, então essa faixa foi calibrada primeiro.
-  static TextTheme _textTheme(Color onSurface) {
+  static TextTheme _textTheme(Color onSurface, {required double scale}) {
     TextStyle style(
       double size,
       double height,
       FontWeight weight,
       double tracking,
-    ) => TextStyle(
-      fontSize: size,
-      height: height,
-      fontWeight: weight,
-      letterSpacing: tracking,
-      color: onSurface,
-    );
+    ) {
+      // Rótulos nunca descem do piso de 11 pt recomendado no iOS. A escala
+      // reduz a densidade visual sem impedir o Dynamic Type do sistema, que
+      // continua sendo aplicado pelo MediaQuery sobre estes tamanhos-base.
+      final scaledSize = size * scale;
+      return TextStyle(
+        fontSize: scaledSize < 11 ? 11 : scaledSize,
+        height: height,
+        fontWeight: weight,
+        letterSpacing: tracking,
+        color: onSurface,
+      );
+    }
 
     return TextTheme(
       displayLarge: style(48, 1.06, FontWeight.w800, -1.4),
@@ -78,8 +87,9 @@ class AppTheme {
     );
   }
 
-  static ThemeData _base(Brightness brightness) {
+  static ThemeData _base(Brightness brightness, {TargetPlatform? platform}) {
     final isDark = brightness == Brightness.dark;
+    final resolvedPlatform = platform ?? defaultTargetPlatform;
     final colors = isDark ? HopeColors.dark : HopeColors.light;
 
     final brand = isDark ? hopeGreenBright : hopeGreen;
@@ -149,11 +159,16 @@ class AppTheme {
       inversePrimary: isDark ? hopeGreen : hopeGreenBright,
     );
 
-    final textTheme = _textTheme(onSurface);
+    // No iPhone, a interface financeira ganha um pouco mais de respiro com
+    // uma redução sutil e uniforme. As demais plataformas mantêm a escala
+    // original, e a acessibilidade continua livre para ampliar o resultado.
+    final typeScale = resolvedPlatform == TargetPlatform.iOS ? 0.95 : 1.0;
+    final textTheme = _textTheme(onSurface, scale: typeScale);
 
     return ThemeData(
       useMaterial3: true,
       brightness: brightness,
+      platform: resolvedPlatform,
       colorScheme: scheme,
       visualDensity: VisualDensity.standard,
       extensions: <ThemeExtension<dynamic>>[colors],
@@ -250,7 +265,9 @@ class AppTheme {
           shape: RoundedRectangleBorder(
             borderRadius: BorderRadius.circular(HopeRadius.sm),
           ),
-          textStyle: textTheme.labelLarge?.copyWith(fontWeight: FontWeight.w700),
+          textStyle: textTheme.labelLarge?.copyWith(
+            fontWeight: FontWeight.w700,
+          ),
         ),
       ),
       outlinedButtonTheme: OutlinedButtonThemeData(
@@ -386,7 +403,9 @@ class AppTheme {
         dragHandleColor: scheme.outline,
         showDragHandle: true,
         shape: const RoundedRectangleBorder(
-          borderRadius: BorderRadius.vertical(top: Radius.circular(HopeRadius.xl)),
+          borderRadius: BorderRadius.vertical(
+            top: Radius.circular(HopeRadius.xl),
+          ),
         ),
         clipBehavior: Clip.antiAlias,
       ),

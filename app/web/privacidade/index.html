@@ -37,7 +37,7 @@
       <section class="privacy-hero">
         <div class="container privacy-hero-grid">
           <div class="privacy-hero-copy reveal">
-            <p class="policy-meta">Política de Privacidade · vigente desde 13 de agosto de 2026</p>
+            <p class="policy-meta">Política de Privacidade · vigente desde 13 de agosto de 2026 · atualizada em 17 de agosto de 2026</p>
             <h1 class="display-title">Seus dados não são o nosso produto.</h1>
             <p>O HopeCash usa suas informações somente para entregar, proteger e melhorar as funções que você escolheu usar. Seus dados financeiros não são vendidos, alugados ou explorados comercialmente.</p>
           </div>
@@ -103,7 +103,7 @@
                 </div>
                 <div>
                   <dt>Hope e recursos opcionais</dt>
-                  <dd>Mensagens enviadas à Hope, transcrições de voz, conversas salvas, ações propostas e preferências de notificação. Microfone e leitura de notificações no Android só são usados após sua permissão.</dd>
+                  <dd>Mensagens enviadas à Hope, transcrições de voz, conversas salvas, ações propostas e preferências de notificação. Microfone e leitura de notificações no Android só são usados após sua permissão. Para gerar as respostas, parte desse conteúdo é processada por operadores externos, conforme <a href="#hope">Hope, voz e notificações</a>.</dd>
                 </div>
                 <div>
                   <dt>Funcionamento e segurança</dt>
@@ -150,9 +150,12 @@
             <section id="hope" class="policy-section">
               <h2>4. Hope, voz e notificações</h2>
               <h3>Conversas com a Hope</h3>
-              <p>As mensagens são processadas na infraestrutura privada do HopeCash para consultar os dados da sua própria conta e formular respostas. As conversas ficam vinculadas ao seu usuário para formar o histórico e podem ser excluídas. O conteúdo não é usado para treinar sistemas de publicidade nem compartilhado com redes de anúncios.</p>
+              <p>As consultas aos dados da sua conta são executadas na infraestrutura do HopeCash: somente o seu usuário é lido, e nenhuma informação de outra conta entra na conversa. Para interpretar o pedido e redigir a resposta, o HopeCash usa um provedor externo de modelo de linguagem que atua como operador. Nessa etapa são enviados a sua mensagem, o histórico recente da conversa e o resultado das consultas necessárias para responder — por exemplo saldos, lançamentos, faturas, orçamentos, metas, dívidas ou investimentos, limitados ao que a pergunta exige. Não enviamos sua senha, seus tokens de sessão nem número completo de cartão, porque o HopeCash não os coleta.</p>
+              <p>As conversas ficam vinculadas ao seu usuário para formar o histórico e podem ser excluídas. Contratamos esses provedores como operadores, sob instrução de tratar o conteúdo apenas para gerar a resposta solicitada e de não usá-lo para finalidades próprias. O conteúdo não é usado para publicidade nem compartilhado com redes de anúncios. Os provedores em uso estão listados em <a href="#operadores">Serviços essenciais e terceiros</a>.</p>
               <h3>Comandos por voz</h3>
-              <p>Quando você ativa o microfone, o serviço de reconhecimento de fala do sistema operacional pode processar o áudio conforme as configurações e termos do seu dispositivo. O HopeCash recebe a transcrição e a envia à infraestrutura privada somente quando isso é necessário para interpretar o comando. O microfone não é mantido ativo continuamente.</p>
+              <p>Quando você ativa o microfone, o serviço de reconhecimento de fala do sistema operacional pode processar o áudio conforme as configurações e termos do seu dispositivo. O HopeCash recebe a transcrição e a trata como uma mensagem sua para a Hope, conforme descrito acima. O microfone não é mantido ativo continuamente.</p>
+              <h3>Resposta falada da Hope</h3>
+              <p>Quando a resposta da Hope é falada, o texto dessa resposta é enviado a um serviço externo de síntese de voz, que atua como operador e devolve apenas o áudio correspondente. Isso acontece quando você toca em “Ouvir resposta” e também quando a pergunta foi feita por voz, caso em que a leitura é automática; em conversas apenas digitadas, nada é enviado a esse serviço sem que você peça. É enviado somente o texto a ser falado, sem o histórico da conversa e sem identificadores da sua conta. O áudio é entregue ao app por endpoint autenticado e não é usado para criar perfis nem para publicidade.</p>
               <h3>Sugestões por notificação no Android</h3>
               <p>Com sua autorização, o app pode ler notificações bancárias compatíveis para sugerir lançamentos. O texto bruto é processado e armazenado apenas no dispositivo e não é sincronizado com o servidor. Somente o lançamento que você revisar e aprovar entra na sua base financeira.</p>
             </section>
@@ -162,11 +165,13 @@
               <p>Não divulgamos dados para que terceiros os explorem em benefício próprio. Alguns fornecedores podem atuar como operadores estritamente necessários para o funcionamento do produto, sob instruções e salvaguardas compatíveis com esta política:</p>
               <ul class="policy-list">
                 <li><strong>Infraestrutura e conectividade:</strong> hospedagem, banco de dados, entrega segura de conteúdo e continuidade do serviço.</li>
+                <li><strong>Groq e Cerebras:</strong> provedores de modelo de linguagem que interpretam seus pedidos à Hope e redigem as respostas. O Groq é o provedor principal e o Cerebras é acionado automaticamente quando o primeiro está indisponível. Ambos recebem o conteúdo descrito em <a href="#hope">Conversas com a Hope</a> e operam infraestrutura fora do Brasil.</li>
+                <li><strong>Microsoft Azure Speech:</strong> síntese da resposta falada da Hope, quando esse recurso é usado. Recebe apenas o texto a ser convertido em áudio e é acionado na região Brasil Sul.</li>
                 <li><strong>Firebase Cloud Messaging:</strong> entrega de notificações push quando você habilita esse recurso.</li>
                 <li><strong>Provedor de e-mail:</strong> recuperação de senha, mensagens operacionais e solicitações enviadas ao suporte.</li>
                 <li><strong>Apple, Google e sistema operacional:</strong> distribuição do aplicativo, permissões, notificações e reconhecimento de fala conforme as escolhas do dispositivo.</li>
               </ul>
-              <p>Limitamos os dados ao mínimo necessário para cada tarefa. Esses serviços podem operar infraestrutura fora do Brasil; quando houver transferência internacional, adotamos os mecanismos e salvaguardas previstos na legislação aplicável. Nunca autorizamos a venda, a publicidade comportamental ou a construção de perfis comerciais com o conteúdo financeiro do HopeCash.</p>
+              <p>Limitamos os dados ao mínimo necessário para cada tarefa. Esses serviços podem operar infraestrutura fora do Brasil — é o caso dos provedores de modelo de linguagem acima; quando houver transferência internacional, adotamos os mecanismos e salvaguardas previstos na legislação aplicável. Nunca autorizamos a venda, a publicidade comportamental ou a construção de perfis comerciais com o conteúdo financeiro do HopeCash. Podemos substituir um operador por outro equivalente para manter o serviço disponível; mudanças relevantes nesta lista são refletidas aqui.</p>
               <p>Podemos fornecer informações a autoridades públicas somente diante de obrigação legal ou ordem válida, dentro do limite exigido. Se houver reorganização societária, qualquer sucessor ficará vinculado a esta política e à legislação aplicável.</p>
             </section>
 
@@ -202,6 +207,7 @@
             <section id="alteracoes" class="policy-section">
               <h2>9. Mudanças nesta política</h2>
               <p>Podemos atualizar este documento para refletir mudanças legais, técnicas ou funcionais. A data de vigência ficará sempre visível. Alterações materiais serão comunicadas de forma adequada no app ou no site antes de produzirem efeitos, e não ampliaremos retroativamente o uso dos dados sem uma base legal válida.</p>
+              <p><strong>Atualização de 17 de agosto de 2026:</strong> detalhamos como as respostas da Hope são geradas e passamos a identificar nominalmente os operadores externos envolvidos no modelo de linguagem e na síntese de voz, além da transferência internacional que isso implica. A atualização descreve com mais precisão o funcionamento já vigente desde 13 de agosto de 2026; não houve ampliação das finalidades nem dos dados tratados.</p>
             </section>
 
             <section id="contato" class="policy-section policy-contact">
@@ -214,7 +220,7 @@
                 <a href="https://www.gov.br/anpd/pt-br/documentos-e-publicacoes/glossario-anpd" target="_blank" rel="noreferrer">Glossário da ANPD</a>
                 <a href="https://www.gov.br/anpd/pt-br/assuntos/noticias/anpd-publica-guia-de-seguranca-para-agentes-de-tratamento-de-pequeno-porte" target="_blank" rel="noreferrer">Guia de segurança da ANPD</a>
               </div>
-              <p class="policy-updated">Última atualização: 13 de agosto de 2026.</p>
+              <p class="policy-updated">Última atualização: 17 de agosto de 2026.</p>
             </section>
           </article>
         </div>

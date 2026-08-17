@@ -1,4 +1,5 @@
 {
     "java.configuration.updateBuildConfiguration": "automatic",
-    "qwen-code.codingPlanRegion": "global"
+    "qwen-code.codingPlanRegion": "global",
+    "java.compile.nullAnalysis.mode": "automatic"
 }

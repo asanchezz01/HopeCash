@@ -10,7 +10,7 @@ import { now, today } from '../../utils/time.js';
 import { csvToItems, ofxToItems, pdfToItems, detectInstallment } from './parsers.js';
 import {
   reconcileItems, reconciliationSummary, statementEffectCents,
-  toCents, transactionEffectCents, transactionValue, isCreditKind,
+  toCents, transactionEffectCents, transactionValue, isCreditKind, normalizeDescription,
 } from './reconciliation.js';
 
 const router = Router();
@@ -29,27 +29,65 @@ const decodeUpload = (buffer) => {
 };
 
 const normalizeDesc = (description) => String(description ?? '').toLowerCase().replace(/\s+/g, ' ').trim();
-const likeEscape = (s) => s.replace(/[%_\\]/g, (c) => `\\${c}`);
 const safeRegexTest = (pattern, value) => { try { return new RegExp(pattern, 'i').test(value); } catch { return false; } };
 
-async function suggestCategory(auth, description) {
-  const desc = normalizeDesc(description);
-  if (!desc) return null;
+/** Quantos lançamentos já categorizados alimentam o dicionário de aprendizado. */
+const DICTIONARY_HISTORY = 2000;
+
+/**
+ * Chave frouxa da descrição: as três primeiras palavras normalizadas. Absorve
+ * o que o banco cola no fim da linha (data, NSU, cidade, número da parcela),
+ * que muda a cada extrato e faria a chave exata errar o mesmo estabelecimento.
+ */
+const merchantKey = (key) => key.split(' ').slice(0, 3).join(' ');
+
+/**
+ * Dicionário de categorização do usuário: o que ele já classificou antes.
+ * Regras explícitas primeiro (têm prioridade e podem trazer subcategoria);
+ * depois o histórico de lançamentos, indexado pela descrição normalizada e
+ * pela chave frouxa do estabelecimento. Carregado uma vez por análise — antes
+ * era uma consulta LIKE por item, e sem subcategoria.
+ */
+async function categorizationDictionary(auth) {
   const rules = await applyScope(db('categorization_rules'), 'categorization_rules', auth)
     .whereNull('deleted_at').where('is_active', true).orderBy('priority');
-  for (const rule of rules) {
+  const history = await applyScope(db('transactions'), 'transactions', auth)
+    .whereNull('deleted_at').whereNotNull('category_id')
+    .orderBy('created_at', 'desc').limit(DICTIONARY_HISTORY)
+    .select('description', 'category_id', 'subcategory_id');
+  const exact = new Map();
+  const merchant = new Map();
+  for (const tx of history) {
+    const key = normalizeDescription(tx.description);
+    if (!key) continue;
+    // Do mais recente para o mais antigo: a primeira classificação encontrada
+    // é a última que o usuário usou para aquela descrição.
+    const entry = { category_id: tx.category_id, subcategory_id: tx.subcategory_id ?? null };
+    if (!exact.has(key)) exact.set(key, entry);
+    if (!merchant.has(merchantKey(key))) merchant.set(merchantKey(key), entry);
+  }
+  return { rules, exact, merchant };
+}
+
+const NO_SUGGESTION = { category_id: null, subcategory_id: null };
+
+/** Categoria e subcategoria que o dicionário associa a uma descrição. */
+function suggestCategorization(dictionary, description) {
+  const desc = normalizeDesc(description);
+  if (!desc) return NO_SUGGESTION;
+  for (const rule of dictionary.rules) {
     const value = rule.match_value.toLowerCase();
     const matched = (rule.operator === 'contains' && desc.includes(value))
       || (rule.operator === 'equals' && desc === value)
       || (rule.operator === 'starts_with' && desc.startsWith(value))
       || (rule.operator === 'regex' && safeRegexTest(rule.match_value, description));
-    if (matched && rule.category_id) return rule.category_id;
+    if (matched && rule.category_id) {
+      return { category_id: rule.category_id, subcategory_id: rule.subcategory_id ?? null };
+    }
   }
-  const similar = await applyScope(db('transactions'), 'transactions', auth)
-    .whereNull('deleted_at').whereNotNull('category_id')
-    .whereRaw('lower(description) like ?', [`%${likeEscape(desc.slice(0, 20))}%`])
-    .orderBy('created_at', 'desc').first();
-  return similar?.category_id ?? null;
+  const key = normalizeDescription(description);
+  if (!key) return NO_SUGGESTION;
+  return dictionary.exact.get(key) ?? dictionary.merchant.get(merchantKey(key)) ?? NO_SUGGESTION;
 }
 
 export function cardDueDate(purchaseDate, closingDay, dueDay) {
@@ -220,17 +258,24 @@ async function createReconciliationAnalysis(req, {
     projected_total_cents: current, extracted_metadata: metadata, analysis_at: now(),
   }, { req });
 
+  const dictionary = await categorizationDictionary(req.auth);
   for (const result of analysis.statement) {
     // Item associado adota a categoria e a subcategoria já lançadas no HopeCash
-    // (editáveis na revisão); sem associação, a sugestão vem de regras e histórico.
+    // (editáveis na revisão); sem associação, ambas vêm do dicionário de
+    // aprendizado — regras do usuário e histórico de descrições parecidas.
     const suggested = result.transaction
-      ? result.transaction.category_id ?? null
-      : await suggestCategory(req.auth, result.item.description);
+      ? {
+        category_id: result.transaction.category_id ?? null,
+        subcategory_id: result.transaction.subcategory_id ?? null,
+      }
+      : suggestCategorization(dictionary, result.item.description);
     await syncRepo.create('import_items', req.auth, {
       batch_id: batch.id, raw: { ...result.item.raw, confidence: result.item.confidence },
       item_origin: 'statement', item_date: result.item.date, description: result.item.description,
       amount: result.item.amount, amount_cents: result.item.amount_cents, kind: result.item.kind,
-      fitid: result.item.fitid, suggested_category_id: suggested,
+      fitid: result.item.fitid,
+      suggested_category_id: suggested.category_id,
+      suggested_subcategory_id: suggested.subcategory_id,
       installment_number: result.item.installment_number ?? null,
       installment_total: result.item.installment_total ?? null,
       status: result.matchType.endsWith('_match') ? 'approved' : 'pending',
@@ -240,7 +285,11 @@ async function createReconciliationAnalysis(req, {
       candidate_transaction_ids: result.candidates, match_reason: result.reason,
       decision: result.transaction ? 'match' : null,
       decision_payload: result.transaction
-        ? matchDecisionPayload(importKind, result.transaction, { itemDate: result.item.date }) : null,
+        ? matchDecisionPayload(importKind, result.transaction, { itemDate: result.item.date })
+        // Fatura guarda a subcategoria em decision_payload (é lá que a revisão
+        // a edita); extrato usa a coluna, e duplicar aqui deixaria a sugestão
+        // antiga na frente da escolha do usuário na hora de criar.
+        : (isInvoice && suggested.subcategory_id ? { subcategory_id: suggested.subcategory_id } : null),
       reviewed_at: result.transaction ? now() : null,
     }, { req });
   }

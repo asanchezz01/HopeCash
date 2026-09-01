@@ -1271,7 +1271,12 @@ class _ReconciliationItemTile extends ConsumerWidget {
     final special =
         item['decision_payload'] as Map<String, dynamic>? ?? const {};
     final categoryId = item['suggested_category_id'] as String?;
-    final subcategoryId = special['subcategory_id'] as String?;
+    // Fatura guarda a subcategoria em decision_payload; extrato, na coluna
+    // suggested_subcategory_id — que é também onde o dicionário deixa a
+    // subcategoria aprendida.
+    final subcategoryId =
+        (special['subcategory_id'] ?? item['suggested_subcategory_id'])
+            as String?;
     final label = switch (match) {
       'exact_match' => 'Correspondência exata',
       'probable_match' => 'Correspondência provável',

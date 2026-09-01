@@ -623,6 +623,46 @@ describe('Importação de extrato', () => {
     expect(items.filter((i) => i.item_origin === 'hopecash')).toHaveLength(0);
   });
 
+  it('dicionário de aprendizado traz categoria e subcategoria já usadas na descrição', async () => {
+    const acc = await newAccount();
+    const cat = (await api.post('/api/v1/categories').set(auth(token))
+      .send({ name: 'Farmácia Teste', type: 'expense' })).body.data;
+    const sub = (await api.post('/api/v1/categories/subcategories').set(auth(token))
+      .send({ category_id: cat.id, name: 'Medicamentos' })).body.data;
+    // Lançamento anterior já classificado: é o que ensina o dicionário.
+    await api.post('/api/v1/transactions').set(auth(token)).send({
+      type: 'expense', description: 'DROGARIA SAO PAULO 4432 SP', amount_planned: 40, amount: 40,
+      competence_date: '2026-07-02', payment_date: '2026-07-02', status: 'paid',
+      account_id: accountId, category_id: cat.id, subcategory_id: sub.id,
+    });
+
+    // Mesma loja, sufixo diferente (NSU/data que o banco cola na descrição).
+    const csv = 'Data;Descrição;Valor\n11/08/2026;DROGARIA SAO PAULO 9911 SP;-63,40\n';
+    const { items } = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('account_id', acc)
+      .attach('file', Buffer.from(csv, 'utf-8'), 'extrato-farmacia.csv')).body.data;
+    const item = items.find((i) => i.item_origin === 'statement');
+    expect(item.suggested_category_id).toBe(cat.id);
+    expect(item.suggested_subcategory_id).toBe(sub.id);
+  });
+
+  it('regra de categorização vence o histórico e leva a subcategoria da regra', async () => {
+    const acc = await newAccount();
+    const sub = (await api.post('/api/v1/categories/subcategories').set(auth(token))
+      .send({ category_id: categoryId, name: 'Hortifruti' })).body.data;
+    await api.post('/api/v1/rules/categorization').set(auth(token)).send({
+      name: 'Feira', match_field: 'description', operator: 'contains',
+      match_value: 'quitanda', category_id: categoryId, subcategory_id: sub.id, priority: 1,
+    });
+    const csv = 'Data;Descrição;Valor\n12/08/2026;QUITANDA DO BAIRRO;-31,00\n';
+    const { items } = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('account_id', acc)
+      .attach('file', Buffer.from(csv, 'utf-8'), 'extrato-quitanda.csv')).body.data;
+    const item = items.find((i) => i.item_origin === 'statement');
+    expect(item.suggested_category_id).toBe(categoryId);
+    expect(item.suggested_subcategory_id).toBe(sub.id);
+  });
+
   it('quita dívida escolhida na revisão: baixa o saldo e liga o lançamento à dívida', async () => {
     const acc = await newAccount();
     const debt = (await api.post('/api/v1/debts').set(auth(token)).send({

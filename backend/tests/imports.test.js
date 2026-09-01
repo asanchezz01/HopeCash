@@ -623,6 +623,78 @@ describe('Importação de extrato', () => {
     expect(items.filter((i) => i.item_origin === 'hopecash')).toHaveLength(0);
   });
 
+  it('quita dívida escolhida na revisão: baixa o saldo e liga o lançamento à dívida', async () => {
+    const acc = await newAccount();
+    const debt = (await api.post('/api/v1/debts').set(auth(token)).send({
+      name: 'Empréstimo Teste', original_amount: 2400, outstanding_balance: 2400,
+      total_installments: 12, paid_installments: 0, installment_amount: 200,
+      due_day: 10, category_id: categoryId,
+    })).body.data;
+    const csv = 'Data;Descrição;Valor\n10/08/2026;PARCELA EMPRESTIMO BANCO;-200,00\n';
+    const { batch, items } = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('account_id', acc)
+      .attach('file', Buffer.from(csv, 'utf-8'), 'extrato-divida.csv')).body.data;
+
+    const item = items.find((i) => i.item_origin === 'statement');
+    const patched = await api.put(`/api/v1/imports/${batch.id}/items/${item.id}`).set(auth(token))
+      .send({ decision: 'create', settlement_type: 'debt', settlement_id: debt.id });
+    expect(patched.status).toBe(200);
+    expect(patched.body.data.item.decision_payload.settlement_id).toBe(debt.id);
+
+    expect((await api.post(`/api/v1/imports/${batch.id}/confirm`).set(auth(token))).status).toBe(200);
+    const after = (await api.get(`/api/v1/debts/${debt.id}`).set(auth(token))).body.data;
+    expect(Number(after.outstanding_balance)).toBe(2200);
+    expect(after.paid_installments).toBe(1);
+    const tx = (await api.get(`/api/v1/transactions?account_id=${acc}`).set(auth(token)))
+      .body.data.find((t) => t.description.includes('EMPRESTIMO'));
+    expect(tx.notes).toContain(`"debt_id":"${debt.id}"`);
+    expect(tx.category_id).toBe(categoryId);
+  });
+
+  it('quita fatura escolhida na revisão: marca as compras do ciclo como pagas', async () => {
+    const acc = await newAccount();
+    const card = (await api.post('/api/v1/cards').set(auth(token))
+      .send({ name: 'Cartão Quitação', limit_amount: 5000, closing_day: 25, due_day: 10 })).body.data;
+    const purchase = (await api.post('/api/v1/transactions').set(auth(token)).send({
+      type: 'expense', description: 'COMPRA CARTAO', amount_planned: 300,
+      competence_date: '2026-07-20', due_date: '2026-08-10', status: 'planned',
+      card_id: card.id, category_id: categoryId,
+    })).body.data;
+    const csv = 'Data;Descrição;Valor\n10/08/2026;PAGTO FATURA CARTAO;-300,00\n';
+    const { batch, items } = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('account_id', acc)
+      .attach('file', Buffer.from(csv, 'utf-8'), 'extrato-fatura.csv')).body.data;
+
+    const item = items.find((i) => i.item_origin === 'statement');
+    // Liquidação de fatura não exige categoria: o gasto já foi contado na compra.
+    await api.put(`/api/v1/imports/${batch.id}/items/${item.id}`).set(auth(token))
+      .send({ decision: 'create', settlement_type: 'card', settlement_id: card.id });
+    expect((await api.post(`/api/v1/imports/${batch.id}/confirm`).set(auth(token))).status).toBe(200);
+
+    const paid = (await api.get(`/api/v1/transactions/${purchase.id}`).set(auth(token))).body.data;
+    expect(paid.status).toBe('paid');
+    expect(paid.payment_date).toBe('2026-08-10');
+    const settlement = (await api.get(`/api/v1/transactions?account_id=${acc}`).set(auth(token)))
+      .body.data.find((t) => t.description.includes('PAGTO FATURA'));
+    expect(settlement.card_id).toBe(card.id);
+    expect(settlement.account_id).toBe(acc);
+  });
+
+  it('recusa quitação em crédito do extrato', async () => {
+    const acc = await newAccount();
+    const debt = (await api.post('/api/v1/debts').set(auth(token)).send({
+      name: 'Dívida Crédito', original_amount: 100, outstanding_balance: 100,
+      total_installments: 1, installment_amount: 100,
+    })).body.data;
+    const csv = 'Data;Descrição;Valor\n05/08/2026;PIX RECEBIDO;300,00\n';
+    const { batch, items } = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('account_id', acc)
+      .attach('file', Buffer.from(csv, 'utf-8'), 'extrato-credito.csv')).body.data;
+    const res = await api.put(`/api/v1/imports/${batch.id}/items/${items[0].id}`).set(auth(token))
+      .send({ settlement_type: 'debt', settlement_id: debt.id });
+    expect(res.status).toBe(400);
+  });
+
   it('converte lote de extrato antigo (sem janela) ao reabrir, com backfill', async () => {
     const acc = await newAccount();
     await api.post('/api/v1/transactions').set(auth(token)).send({

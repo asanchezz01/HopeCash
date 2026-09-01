@@ -349,6 +349,10 @@ const reconciliationItemPatch = z.object({
   notes: z.string().max(2000).nullish(), transaction_patch: z.record(z.any()).optional(),
   installment_number: z.coerce.number().int().min(1).nullish(),
   installment_total: z.coerce.number().int().min(1).nullish(),
+  // Quitação: o débito do extrato não é uma despesa nova, e sim o pagamento
+  // de uma dívida ou da fatura de um cartão. null limpa a escolha.
+  settlement_type: z.enum(['debt', 'card']).nullish(),
+  settlement_id: z.string().uuid().nullish(),
 });
 
 router.put('/:id/items/:itemId', validate(reconciliationItemPatch), async (req, res) => {
@@ -374,7 +378,30 @@ router.put('/:id/items/:itemId', validate(reconciliationItemPatch), async (req, 
       ? { category_id: patch.suggested_category_id ?? null } : {}),
     ...(patch.transaction_patch ?? {}),
   };
+  if (patch.settlement_type !== undefined) {
+    if (patch.settlement_type && batch.import_kind === 'credit_card_invoice') {
+      throw badRequest('Quitação só se aplica a itens de extrato bancário');
+    }
+    if (patch.settlement_type && item.item_origin !== 'statement') throw badRequest('Só itens do extrato podem quitar');
+    if (patch.settlement_type && statementEffectCents({ ...item, ...patch }) <= 0) {
+      throw badRequest('Só um débito do extrato pode quitar dívida ou fatura');
+    }
+    const target = patch.settlement_type
+      && await syncRepo.findById(patch.settlement_type === 'debt' ? 'debts' : 'credit_cards', req.auth, patch.settlement_id);
+    if (patch.settlement_type && !target) throw badRequest('Dívida ou cartão da quitação não encontrado');
+    patch.decision_payload = { ...patch.decision_payload,
+      settlement_type: patch.settlement_type ?? null,
+      settlement_id: patch.settlement_type ? patch.settlement_id : null,
+    };
+    // A dívida traz a categoria da despesa; sem ela o item ficaria sem
+    // categoria e travaria a conclusão.
+    if (patch.settlement_type === 'debt' && !(patch.suggested_category_id ?? item.suggested_category_id)) {
+      patch.suggested_category_id = target.category_id ?? null;
+      patch.decision_payload.subcategory_id = patch.decision_payload.subcategory_id ?? target.subcategory_id ?? null;
+    }
+  }
   delete patch.subcategory_id; delete patch.notes; delete patch.transaction_patch;
+  delete patch.settlement_type; delete patch.settlement_id;
   if (patch.decision === 'match') {
     const txId = patch.matched_transaction_id ?? item.matched_transaction_id;
     const tx = txId && await syncRepo.findById('transactions', req.auth, txId);
@@ -601,6 +628,66 @@ const safeTransactionPatch = (payload = {}) => Object.fromEntries(Object.entries
 const changedFields = (patch, transaction) => Object.fromEntries(Object.entries(patch)
   .filter(([key, value]) => String(transaction[key] ?? '') !== String(value ?? '')));
 
+const DEBT_PAYMENT_PREFIX = 'hopecash:debt_payment:';
+
+/**
+ * Quitação de dívida vinda do extrato: amortiza o saldo devedor, avança a
+ * parcela e devolve a nota estruturada que liga o lançamento à dívida — mesmo
+ * formato que o app grava em payDebtInstallment, que é como as telas de
+ * dívida reconhecem a baixa. O que exceder o saldo devedor é juros/multa e
+ * não amortiza.
+ */
+async function settleDebt(req, debtId, amount, paymentDate, trx) {
+  const debt = await syncRepo.findById('debts', req.auth, debtId, { trx });
+  if (!debt) throw badRequest('Dívida da quitação não encontrada');
+  const amortized = Math.min(amount, Number(debt.outstanding_balance));
+  const outstanding = Math.round((Number(debt.outstanding_balance) - amortized) * 100) / 100;
+  const paidInstallments = outstanding <= 0
+    ? debt.total_installments
+    : Math.min(debt.paid_installments + 1, debt.total_installments);
+  await syncRepo.update('debts', req.auth, debt.id, {
+    outstanding_balance: outstanding,
+    paid_installments: paidInstallments,
+    status: outstanding <= 0 ? 'paid_off' : debt.status,
+  }, { trx, req, expectedVersion: debt.version });
+  return {
+    note: `${DEBT_PAYMENT_PREFIX}${JSON.stringify({
+      debt_id: debt.id, due_date: paymentDate, installment_number: paidInstallments,
+      installments_advanced: paidInstallments - debt.paid_installments,
+    })}`,
+    category_id: debt.category_id ?? null,
+    subcategory_id: debt.subcategory_id ?? null,
+  };
+}
+
+/**
+ * Quitação de fatura vinda do extrato: marca como pagas as compras do ciclo
+ * que o débito liquida — o ciclo em aberto cujo total bate com o valor pago e,
+ * sem coincidência exata, o de vencimento mais próximo do pagamento. As
+ * liquidações antigas (account_id + card_id) ficam de fora: não são compras.
+ */
+async function settleCardInvoice(req, cardId, amountCents, paymentDate, trx) {
+  const card = await syncRepo.findById('credit_cards', req.auth, cardId, { trx });
+  if (!card) throw badRequest('Cartão da quitação não encontrado');
+  const open = await applyScope(trx('transactions'), 'transactions', req.auth)
+    .whereNull('deleted_at').where('card_id', cardId).whereNull('account_id')
+    .whereNotNull('due_date').whereIn('status', ['planned', 'overdue']);
+  if (!open.length) return;
+  const cycles = new Map();
+  for (const tx of open) cycles.set(tx.due_date, [...(cycles.get(tx.due_date) ?? []), tx]);
+  const totalOf = (list) => list.reduce((sum, tx) => sum + transactionEffectCents(tx), 0);
+  const entries = [...cycles.entries()];
+  const distance = ([dueDate]) => Math.abs(Date.parse(`${String(dueDate).slice(0, 10)}T00:00:00Z`)
+    - Date.parse(`${String(paymentDate).slice(0, 10)}T00:00:00Z`));
+  const chosen = entries.find(([, list]) => totalOf(list) === amountCents)
+    ?? entries.sort((a, b) => distance(a) - distance(b))[0];
+  for (const tx of chosen[1]) {
+    await syncRepo.update('transactions', req.auth, tx.id, {
+      status: 'paid', payment_date: paymentDate, amount: Math.abs(Number(transactionValue(tx))),
+    }, { trx, req, expectedVersion: tx.version });
+  }
+}
+
 router.post('/:id/confirm', async (req, res) => {
   const batch = await syncRepo.findById('import_batches', req.auth, req.params.id);
   if (!batch) throw notFound('Lote não encontrado');
@@ -637,9 +724,17 @@ router.post('/:id/confirm', async (req, res) => {
         const effect = statementEffectCents(item);
         const isExpense = effect >= 0;
         const payload = item.decision_payload ?? {};
-        const categoryId = payload.category_id ?? item.suggested_category_id;
-        // Paridade com a fatura: despesa nova exige categoria.
-        if (isExpense && !categoryId) throw badRequest(`Categoria obrigatória no item ${item.description}`);
+        const isBank = locked.import_kind !== 'credit_card_invoice';
+        // Quitação escolhida na revisão: o débito paga uma dívida ou a fatura
+        // de um cartão em vez de virar uma despesa avulsa.
+        const settlementType = isBank && isExpense ? payload.settlement_type ?? null : null;
+        const settled = settlementType === 'debt'
+          ? await settleDebt(req, payload.settlement_id, Math.abs(effect) / 100, item.item_date, trx)
+          : null;
+        const categoryId = payload.category_id ?? item.suggested_category_id ?? settled?.category_id ?? null;
+        // Paridade com a fatura: despesa nova exige categoria. A liquidação de
+        // fatura é exceção — o gasto já foi contado em cada compra do cartão.
+        if (isExpense && !categoryId && settlementType !== 'card') throw badRequest(`Categoria obrigatória no item ${item.description}`);
         const number = Number(item.installment_number);
         const total = Number(item.installment_total);
         const isInstallment = locked.import_kind === 'credit_card_invoice' && isExpense
@@ -647,12 +742,14 @@ router.post('/:id/confirm', async (req, res) => {
           && Number.isInteger(number) && number >= 1 && number <= total
           && Boolean(item.item_date) && Boolean(locked.invoice_due_date);
         const groupId = isInstallment ? crypto.randomUUID() : null;
-        const isBank = locked.import_kind !== 'credit_card_invoice';
         const tx = await syncRepo.create('transactions', req.auth, {
           type: isExpense ? 'expense' : 'income', description: item.description,
-          notes: payload.notes ?? null, amount_planned: Math.abs(effect) / 100,
+          notes: settled?.note ?? payload.notes ?? null, amount_planned: Math.abs(effect) / 100,
           competence_date: item.item_date, category_id: categoryId,
-          subcategory_id: payload.subcategory_id ?? item.suggested_subcategory_id ?? null,
+          subcategory_id: payload.subcategory_id ?? item.suggested_subcategory_id ?? settled?.subcategory_id ?? null,
+          // Débito com conta E cartão é a convenção de liquidação de fatura:
+          // fica fora das estatísticas de gasto, que já contam as compras.
+          ...(settlementType === 'card' ? { card_id: payload.settlement_id } : {}),
           // Fatura cria a compra no cartão (planned, vencendo na fatura);
           // extrato cria o lançamento já pago na conta, com amount preenchido.
           ...(isBank
@@ -663,6 +760,9 @@ router.post('/:id/confirm', async (req, res) => {
           installment_total: isInstallment ? total : null,
         }, { trx, req });
         await syncRepo.update('import_items', req.auth, item.id, { transaction_id: tx.id, status: 'approved' }, { trx, req }); created += 1;
+        if (settlementType === 'card') {
+          await settleCardInvoice(req, payload.settlement_id, Math.abs(effect), item.item_date, trx);
+        }
         if (isInstallment) {
           // As parcelas restantes entram nas próximas faturas (uma por mês) e
           // passam a compor o limite comprometido do cartão. Faturas futuras

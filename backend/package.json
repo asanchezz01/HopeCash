@@ -14,8 +14,8 @@
     "migrate:rollback": "knex migrate:rollback",
     "seed": "knex seed:run",
     "eval:ai": "node scripts/eval-ai.js",
-    "test": "cross-env NODE_ENV=test vitest run",
-    "test:watch": "cross-env NODE_ENV=test vitest"
+    "test": "cross-env NODE_ENV=test CEREBRAS_API_KEY= vitest run",
+    "test:watch": "cross-env NODE_ENV=test CEREBRAS_API_KEY= vitest"
   },
   "dependencies": {
     "bcryptjs": "^3.0.2",

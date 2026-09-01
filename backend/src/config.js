@@ -14,7 +14,7 @@ const secret = (value, file) => {
 const cerebras = {
   id: 'cerebras',
   url: (process.env.CEREBRAS_BASE_URL || 'https://api.cerebras.ai/v1').replace(/\/+$/, ''),
-  apiKey: secret(process.env.CEREBRAS_API_KEY, process.env.CEREBRAS_API_KEY_FILE),
+  apiKey: process.env.CEREBRAS_API_KEY?.trim() || '',
   timeoutMs: Number(process.env.CEREBRAS_TIMEOUT_MS || 30_000),
   reasoningEffort: process.env.CEREBRAS_REASONING_EFFORT || 'low',
   models: {

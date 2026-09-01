@@ -175,7 +175,10 @@ export function reconciliationSummary(batch, items) {
     } else if (item.decision === 'create') {
       const effect = statementEffectCents(item);
       projected += effect; additions += effect;
-      if (!isCreditKind(item.kind) && !(payload.category_id ?? item.suggested_category_id)) missing.push(item.id);
+      // Quitação de fatura não é despesa nova — o gasto já foi contado em cada
+      // compra do cartão —, então é a única criação de débito sem categoria.
+      if (!isCreditKind(item.kind) && payload.settlement_type !== 'card'
+        && !(payload.category_id ?? item.suggested_category_id)) missing.push(item.id);
     } else if (!item.decision) missing.push(item.id);
   }
   const official = batch.official_total_cents == null ? null : Number(batch.official_total_cents);

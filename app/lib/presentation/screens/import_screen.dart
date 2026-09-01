@@ -277,14 +277,40 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
       _isInvoice ? 'subcategory_id' : 'suggested_subcategory_id';
 
   /// Ao trocar a categoria diretamente no card, a subcategoria anterior pode
-  /// não pertencer mais a ela, então é limpa na mesma chamada.
+  /// não pertencer mais a ela, então é limpa na mesma chamada. Categorizar um
+  /// item do extrato ainda pendente já é a decisão de criá-lo: sem isso o
+  /// usuário categoriza tudo e a conciliação segue bloqueada por falta de
+  /// decisão.
   Future<void> _setItemCategory(
     Map<String, dynamic> item,
     String? categoryId,
   ) => _patchItem(item, {
     'suggested_category_id': categoryId,
     _subcategoryPatchKey: null,
+    if (categoryId != null && _isPendingStatement(item)) 'decision': 'create',
   });
+
+  static bool _isPendingStatement(Map<String, dynamic> item) =>
+      item['item_origin'] == 'statement' && item['decision'] == null;
+
+  /// Quitação: o débito do extrato paga uma dívida ou a fatura de um cartão em
+  /// vez de virar despesa avulsa. Escolher também decide criar o lançamento.
+  Future<void> _setItemSettlement(
+    Map<String, dynamic> item,
+    String? value,
+  ) async {
+    final parts = value?.split(':');
+    final ok = await _patchItem(item, {
+      'settlement_type': parts?.first,
+      'settlement_id': parts?.last,
+      if (parts != null && _isPendingStatement(item)) 'decision': 'create',
+    });
+    if (!ok && mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Não foi possível aplicar a quitação')),
+      );
+    }
+  }
 
   Future<void> _setItemSubcategory(
     Map<String, dynamic> item,
@@ -1128,6 +1154,9 @@ class _ImportScreenState extends ConsumerState<ImportScreen> {
                 _setItemCategory(item, categoryId),
             onSubcategoryChanged: (subcategoryId) =>
                 _setItemSubcategory(item, subcategoryId),
+            onSettlementChanged: _isInvoice
+                ? null
+                : (value) => _setItemSettlement(item, value),
           ),
         ),
       const SizedBox(height: 16),
@@ -1220,6 +1249,7 @@ class _ReconciliationItemTile extends ConsumerWidget {
     required this.onChooseMatch,
     required this.onCategoryChanged,
     required this.onSubcategoryChanged,
+    this.onSettlementChanged,
   });
   final Map<String, dynamic> item;
   final VoidCallback onEdit;
@@ -1227,6 +1257,9 @@ class _ReconciliationItemTile extends ConsumerWidget {
   final VoidCallback onChooseMatch;
   final ValueChanged<String?> onCategoryChanged;
   final ValueChanged<String?> onSubcategoryChanged;
+
+  /// Só extrato bancário quita dívida/fatura; null esconde o seletor.
+  final ValueChanged<String?>? onSettlementChanged;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -1362,7 +1395,19 @@ class _ReconciliationItemTile extends ConsumerWidget {
                 ),
               ),
             ),
-          if (origin == 'statement') ...[
+          if (origin == 'statement' &&
+              onSettlementChanged != null &&
+              (item['amount_cents'] as num? ?? 0) < 0) ...[
+            const SizedBox(height: 8),
+            _SettlementField(
+              itemId: item['id'] as String,
+              value: special['settlement_type'] == null
+                  ? null
+                  : '${special['settlement_type']}:${special['settlement_id']}',
+              onChanged: onSettlementChanged!,
+            ),
+          ],
+          if (origin == 'statement' && special['settlement_type'] != 'card') ...[
             const SizedBox(height: 8),
             _CategorySubcategoryRow(
               itemId: item['id'] as String,
@@ -1456,6 +1501,59 @@ class _DecisionBadge extends StatelessWidget {
       ],
     ),
   );
+}
+
+/// Escolha da dívida ou fatura que o débito do extrato quita. Ao concluir a
+/// conciliação, a dívida tem o saldo devedor baixado e a fatura tem as compras
+/// do ciclo marcadas como pagas — em vez de nascer uma despesa avulsa.
+class _SettlementField extends ConsumerWidget {
+  const _SettlementField({
+    required this.itemId,
+    required this.value,
+    required this.onChanged,
+  });
+
+  final String itemId;
+
+  /// `debt:<id>` ou `card:<id>`; null quando o item é uma despesa comum.
+  final String? value;
+  final ValueChanged<String?> onChanged;
+
+  @override
+  Widget build(BuildContext context, WidgetRef ref) {
+    final debts = (ref.watch(debtsProvider).valueOrNull ?? [])
+        .where((d) => d.status == 'active')
+        .toList();
+    final cards = (ref.watch(creditCardsProvider).valueOrNull ?? [])
+        .where((c) => c.isActive)
+        .toList();
+    if (debts.isEmpty && cards.isEmpty) return const SizedBox.shrink();
+    final options = [
+      for (final d in debts) ('debt:${d.id}', 'Dívida · ${d.name}'),
+      for (final c in cards) ('card:${c.id}', 'Fatura · ${c.name}'),
+    ];
+    return DropdownButtonFormField<String>(
+      key: ValueKey('settlement-$itemId-$value-${options.length}'),
+      initialValue: options.any((o) => o.$1 == value) ? value : null,
+      isExpanded: true,
+      isDense: true,
+      decoration: const InputDecoration(
+        labelText: 'Quitação',
+        isDense: true,
+        helperText: 'Dá baixa na dívida ou na fatura em vez de criar despesa',
+        prefixIcon: Icon(Icons.price_check_outlined, size: 18),
+      ),
+      items: [
+        const DropdownMenuItem(value: null, child: Text('Despesa comum')),
+        for (final option in options)
+          DropdownMenuItem(
+            value: option.$1,
+            child: Text(option.$2, overflow: TextOverflow.ellipsis),
+          ),
+      ],
+      onChanged: onChanged,
+    );
+  }
 }
 
 /// Seleção rápida de categoria e subcategoria direto no card, sem abrir a

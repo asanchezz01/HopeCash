@@ -62,7 +62,6 @@ services:
       # Cerebras como primário, com fallback automático para Groq.
       AI_PROVIDER: ${AI_PROVIDER:-cerebras}
       CEREBRAS_API_KEY: ${CEREBRAS_API_KEY:-}
-      CEREBRAS_API_KEY_FILE: ${CEREBRAS_API_KEY_FILE:-}
       CEREBRAS_BASE_URL: ${CEREBRAS_BASE_URL:-https://api.cerebras.ai/v1}
       CEREBRAS_TIMEOUT_MS: ${CEREBRAS_TIMEOUT_MS:-30000}
       CEREBRAS_REASONING_EFFORT: ${CEREBRAS_REASONING_EFFORT:-low}

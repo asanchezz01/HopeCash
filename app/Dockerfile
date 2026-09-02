@@ -74,6 +74,11 @@ RUN printf 'server {\n\
   add_header Cross-Origin-Opener-Policy same-origin always;\n\
   add_header Cross-Origin-Embedder-Policy require-corp always;\n\
 \n\
+  gzip on;\n\
+  gzip_comp_level 6;\n\
+  gzip_min_length 1024;\n\
+  gzip_types text/css application/javascript application/json application/wasm image/svg+xml;\n\
+\n\
   location = / {\n\
     add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;\n\
     try_files /index.html =404;\n\
@@ -84,7 +89,7 @@ RUN printf 'server {\n\
     try_files $uri =404;\n\
   }\n\
 \n\
-  location ~ ^/(flutter_bootstrap\\.js|flutter_service_worker\\.js|firebase-messaging-sw\\.js|main\\.dart\\.js|version\\.json|manifest\\.json)$ {\n\
+  location ~ ^/(flutter_bootstrap\\.js|flutter_service_worker\\.js|firebase-messaging-sw\\.js|version\\.json|manifest\\.json)$ {\n\
     add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;\n\
     try_files $uri =404;\n\
   }\n\
@@ -96,7 +101,7 @@ RUN printf 'server {\n\
   }\n\
 \n\
   location / {\n\
-    add_header Cache-Control "no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0" always;\n\
+    add_header Cache-Control "no-cache" always;\n\
     try_files $uri $uri/ /index.html;\n\
   }\n\
 }\n' > /etc/nginx/conf.d/default.conf

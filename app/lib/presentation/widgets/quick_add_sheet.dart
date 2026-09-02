@@ -87,7 +87,16 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
   bool _splitEnabled = false;
   List<TransactionSplit> _splits = const [];
 
+  /// Quitação escolhida: `debt:<id>` ou `card:<id>`; null = despesa comum.
+  String? _settlementKey;
+
   bool get _isCardPayment => _paymentKey?.startsWith('card:') ?? false;
+
+  /// Quitar só faz sentido para despesa saindo de uma conta.
+  bool get _canSettle => _type == 'expense' && !_isCardPayment;
+
+  /// Fatura já é o gasto das compras do ciclo: não pede categoria nem rateio.
+  bool get _isInvoiceSettlement => _settlementKey?.startsWith('card:') ?? false;
 
   @override
   void initState() {
@@ -159,6 +168,8 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
           );
           message = 'Estorno lançado no ${card.name}';
         }
+      } else if (_settlementKey != null) {
+        message = await _saveSettlement(repo, amount, description);
       } else {
         await repo.addTransaction(
           type: _type,
@@ -195,6 +206,60 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
     }
   }
 
+  /// Quitação: em vez de uma despesa avulsa, o lançamento dá baixa em uma
+  /// dívida (amortiza o saldo devedor) ou em uma fatura (marca as compras do
+  /// ciclo como pagas). Mesma escolha oferecida na conciliação de extrato.
+  Future<String> _saveSettlement(
+    FinanceRepository repo,
+    double amount,
+    String description,
+  ) async {
+    final accountId = _paymentKey!.substring('account:'.length);
+    final id = _settlementKey!.split(':').last;
+    final transactions = ref.read(transactionsProvider).valueOrNull ?? [];
+    if (_settlementKey!.startsWith('debt:')) {
+      final debt = (ref.read(debtsProvider).valueOrNull ?? []).firstWhere(
+        (d) => d.id == id,
+      );
+      final next = repo.nextOpenDebtInstallment(debt, transactions);
+      if (next == null) throw ArgumentError('Esta dívida já está quitada.');
+      await repo.payDebtInstallment(
+        debt: debt,
+        plannedAmount: next.amount,
+        amount: amount,
+        dueDate: next.dueDate,
+        paymentDate: _date,
+        installmentNumber: next.installmentNumber,
+        categoryId: _categoryId,
+        subcategoryId: _subcategoryId,
+        accountId: accountId,
+        description: description,
+      );
+      return 'Baixa registrada em ${debt.name}';
+    }
+    final card = (ref.read(creditCardsProvider).valueOrNull ?? []).firstWhere(
+      (c) => c.id == id,
+    );
+    final cycle = repo.openInvoiceCycle(
+      card.id,
+      transactions,
+      paymentDate: _date,
+      amount: amount,
+    );
+    if (cycle.isEmpty) {
+      throw ArgumentError('Não há fatura em aberto no ${card.name}.');
+    }
+    await repo.payCardInvoice(
+      card: card,
+      transactions: cycle,
+      accountId: accountId,
+      paymentDate: _date,
+      paidAmount: amount,
+      description: description,
+    );
+    return 'Fatura do ${card.name} quitada';
+  }
+
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
       context: context,
@@ -216,6 +281,9 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
     final categories = (ref.watch(categoriesProvider).valueOrNull ?? [])
         .where((c) => c.type == _type)
         .toList();
+    final debts = (ref.watch(debtsProvider).valueOrNull ?? [])
+        .where((d) => d.status == 'active')
+        .toList();
     final isExpense = _type == 'expense';
 
     final accent = isExpense
@@ -230,8 +298,7 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
           child: Form(
             key: _formKey,
             child: SingleChildScrollView(
-              keyboardDismissBehavior:
-                  ScrollViewKeyboardDismissBehavior.onDrag,
+              keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
               padding: EdgeInsets.fromLTRB(
                 HopeSpacing.lg,
                 HopeSpacing.xs,
@@ -272,6 +339,8 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                       _type = s.first;
                       _categoryId = null;
                       _subcategoryId = null;
+                      // Receita não quita dívida nem fatura.
+                      if (_type != 'expense') _settlementKey = null;
                       // Estorno no cartão (receita) não é parcelado.
                       if (_type == 'income') _installments = 1;
                     }),
@@ -331,14 +400,25 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                             ),
                           ),
                       ],
+                      // A baixa precisa sair de uma conta: é o débito que
+                      // paga a dívida ou a fatura.
+                      validator: (v) =>
+                          _settlementKey != null &&
+                              !(v?.startsWith('account:') ?? false)
+                          ? 'Escolha a conta que pagou'
+                          : null,
                       onChanged: _saving
                           ? null
                           : (v) => setState(() {
                               _paymentKey = v;
-                              if (!_isCardPayment) _installments = 1;
+                              if (!_isCardPayment) {
+                                _installments = 1;
+                              } else {
+                                _settlementKey = null;
+                              }
                             }),
                     ),
-                    second: _splitEnabled
+                    second: _splitEnabled || _isInvoiceSettlement
                         ? null
                         : SearchableCategoryField(
                             categories: categories,
@@ -351,7 +431,9 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                             }),
                           ),
                   ),
-                  if (_categoryId != null && !_splitEnabled) ...[
+                  if (_categoryId != null &&
+                      !_splitEnabled &&
+                      !_isInvoiceSettlement) ...[
                     const SizedBox(height: HopeSpacing.sm),
                     SubcategorySelector(
                       categoryId: _categoryId,
@@ -360,28 +442,80 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                       onChanged: (v) => setState(() => _subcategoryId = v),
                     ),
                   ],
-                  const SizedBox(height: HopeSpacing.sm),
-                  FormSwitchRow(
-                    icon: Icons.call_split_rounded,
-                    title: 'Ratear por categorias',
-                    subtitle: 'Um lançamento só, dividido entre categorias',
-                    value: _splitEnabled,
-                    onChanged: (value) => setState(() {
-                      _splitEnabled = value;
-                      if (value) {
-                        _categoryId = null;
-                        _subcategoryId = null;
-                      }
-                    }),
-                  ),
-                  if (_splitEnabled) ...[
+                  if (_canSettle) ...[
                     const SizedBox(height: HopeSpacing.sm),
-                    TransactionSplitEditor(
-                      type: _type,
-                      initialSplits: _splits,
-                      totalAmount: parseMoney(_amount.text) ?? 0,
-                      onChanged: (splits) => _splits = splits,
+                    DropdownButtonFormField<String>(
+                      initialValue: _settlementKey,
+                      isExpanded: true,
+                      decoration: const InputDecoration(
+                        labelText: 'Quitação',
+                        helperText:
+                            'Dá baixa na dívida ou na fatura em vez de '
+                            'lançar uma despesa comum',
+                        helperMaxLines: 2,
+                        prefixIcon: Icon(Icons.price_check_outlined),
+                      ),
+                      items: [
+                        const DropdownMenuItem(
+                          value: null,
+                          child: Text('Despesa comum'),
+                        ),
+                        for (final d in debts)
+                          DropdownMenuItem(
+                            value: 'debt:${d.id}',
+                            child: Text(
+                              'Dívida · ${d.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                        for (final c in cards)
+                          DropdownMenuItem(
+                            value: 'card:${c.id}',
+                            child: Text(
+                              'Fatura · ${c.name}',
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                      ],
+                      onChanged: _saving
+                          ? null
+                          : (v) => setState(() {
+                              _settlementKey = v;
+                              if (v != null) {
+                                _isPaid = true;
+                                _splitEnabled = false;
+                                if (_isInvoiceSettlement) {
+                                  _categoryId = null;
+                                  _subcategoryId = null;
+                                }
+                              }
+                            }),
                     ),
+                  ],
+                  if (_settlementKey == null) ...[
+                    const SizedBox(height: HopeSpacing.sm),
+                    FormSwitchRow(
+                      icon: Icons.call_split_rounded,
+                      title: 'Ratear por categorias',
+                      subtitle: 'Um lançamento só, dividido entre categorias',
+                      value: _splitEnabled,
+                      onChanged: (value) => setState(() {
+                        _splitEnabled = value;
+                        if (value) {
+                          _categoryId = null;
+                          _subcategoryId = null;
+                        }
+                      }),
+                    ),
+                    if (_splitEnabled) ...[
+                      const SizedBox(height: HopeSpacing.sm),
+                      TransactionSplitEditor(
+                        type: _type,
+                        initialSplits: _splits,
+                        totalAmount: parseMoney(_amount.text) ?? 0,
+                        onChanged: (splits) => _splits = splits,
+                      ),
+                    ],
                   ],
                   const SizedBox(height: HopeSpacing.sm),
                   ResponsiveFieldPair(
@@ -408,10 +542,9 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                             ],
                             onChanged: _saving
                                 ? null
-                                : (v) =>
-                                      setState(() => _installments = v ?? 1),
+                                : (v) => setState(() => _installments = v ?? 1),
                           )
-                        : _isCardPayment
+                        : _isCardPayment || _settlementKey != null
                         ? null
                         : TransactionStatusField(
                             isPaid: _isPaid,
@@ -419,6 +552,18 @@ class _QuickAddSheetState extends ConsumerState<_QuickAddSheet> {
                             onChanged: (v) => setState(() => _isPaid = v),
                           ),
                   ),
+                  if (_settlementKey != null)
+                    Padding(
+                      padding: const EdgeInsets.only(top: HopeSpacing.xs),
+                      child: FieldHint(
+                        text: _isInvoiceSettlement
+                            ? 'As compras da fatura escolhida ficam pagas e o '
+                                  'débito sai da conta — o gasto já foi contado '
+                                  'em cada compra, então não pede categoria.'
+                            : 'O saldo devedor da dívida é amortizado e a '
+                                  'parcela avança.',
+                      ),
+                    ),
                   if (_isCardPayment)
                     Padding(
                       padding: const EdgeInsets.only(top: HopeSpacing.xs),

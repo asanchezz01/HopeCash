@@ -1641,75 +1641,72 @@ void main() {
     );
   });
 
-  test(
-    'próximo pagamento avança para o mês seguinte após a baixa mesmo sem '
-    'firstDueDate',
-    () async {
-      // Regressão: dívidas ancoradas só em dueDay (sem firstDueDate) sempre
-      // mostravam "próximo pagamento" no dia de vencimento do mês corrente,
-      // mesmo já pagas, porque a tela não considerava os meses já baixados.
-      final now = DateTime.now();
+  test('próximo pagamento avança para o mês seguinte após a baixa mesmo sem '
+      'firstDueDate', () async {
+    // Regressão: dívidas ancoradas só em dueDay (sem firstDueDate) sempre
+    // mostravam "próximo pagamento" no dia de vencimento do mês corrente,
+    // mesmo já pagas, porque a tela não considerava os meses já baixados.
+    final now = DateTime.now();
 
-      await db
-          .into(db.localCategories)
-          .insert(
-            LocalCategoriesCompanion.insert(
-              id: 'cat-financiamento',
-              name: 'Financiamento',
-              type: 'expense',
-            ),
-          );
-      await repository.upsertDebt(
-        id: 'debt-financiamento-carro',
-        name: 'Financiamento do carro',
-        type: 'financing',
-        originalAmount: 6000,
-        outstandingBalance: 6000,
-        totalInstallments: 12,
-        installmentAmount: 500,
-        dueDay: now.day,
-      );
+    await db
+        .into(db.localCategories)
+        .insert(
+          LocalCategoriesCompanion.insert(
+            id: 'cat-financiamento',
+            name: 'Financiamento',
+            type: 'expense',
+          ),
+        );
+    await repository.upsertDebt(
+      id: 'debt-financiamento-carro',
+      name: 'Financiamento do carro',
+      type: 'financing',
+      originalAmount: 6000,
+      outstandingBalance: 6000,
+      totalInstallments: 12,
+      installmentAmount: 500,
+      dueDay: now.day,
+    );
 
-      final debt = await (db.select(
-        db.localDebts,
-      )..where((d) => d.id.equals('debt-financiamento-carro'))).getSingle();
+    final debt = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-financiamento-carro'))).getSingle();
 
-      final beforePayment = repository.nextOpenDebtInstallment(debt, const []);
-      expect(beforePayment != null, true);
-      expect(
-        beforePayment!.dueDate.startsWith(_isoDate(now).substring(0, 7)),
-        isTrue,
-      );
+    final beforePayment = repository.nextOpenDebtInstallment(debt, const []);
+    expect(beforePayment != null, true);
+    expect(
+      beforePayment!.dueDate.startsWith(_isoDate(now).substring(0, 7)),
+      isTrue,
+    );
 
-      await repository.payDebtInstallment(
-        debt: debt,
-        plannedAmount: 500,
-        amount: 500,
-        dueDate: _isoDate(now),
-        paymentDate: _isoDate(now),
-        installmentNumber: 1,
-        categoryId: 'cat-financiamento',
-      );
+    await repository.payDebtInstallment(
+      debt: debt,
+      plannedAmount: 500,
+      amount: 500,
+      dueDate: _isoDate(now),
+      paymentDate: _isoDate(now),
+      installmentNumber: 1,
+      categoryId: 'cat-financiamento',
+    );
 
-      final updatedDebt = await (db.select(
-        db.localDebts,
-      )..where((d) => d.id.equals('debt-financiamento-carro'))).getSingle();
-      final allTxs = await db.select(db.localTransactions).get();
+    final updatedDebt = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-financiamento-carro'))).getSingle();
+    final allTxs = await db.select(db.localTransactions).get();
 
-      final nextInstallment = repository.nextOpenDebtInstallment(
-        updatedDebt,
-        allTxs,
-      );
-      expect(nextInstallment != null, true);
-      expect(
-        nextInstallment!.dueDate.startsWith(_isoDate(now).substring(0, 7)),
-        isFalse,
-        reason:
-            'após a baixa, o próximo pagamento não pode continuar no mesmo '
-            'mês já pago',
-      );
-    },
-  );
+    final nextInstallment = repository.nextOpenDebtInstallment(
+      updatedDebt,
+      allTxs,
+    );
+    expect(nextInstallment != null, true);
+    expect(
+      nextInstallment!.dueDate.startsWith(_isoDate(now).substring(0, 7)),
+      isFalse,
+      reason:
+          'após a baixa, o próximo pagamento não pode continuar no mesmo '
+          'mês já pago',
+    );
+  });
 
   test('agenda financeira mostra atrasados e o mês selecionado, '
       'sem o mês seguinte', () async {
@@ -2120,5 +2117,137 @@ void main() {
     expect(await db.stateValue('active_user_id'), 'user-b');
     expect(await db.stateValue('pull_cursor'), '0');
     expect(await db.stateValue('device_id'), 'device-stable');
+  });
+
+  test(
+    'quitação de fatura escolhe o ciclo pelo valor pago e baixa as compras',
+    () async {
+      await repository.upsertAccount(
+        id: 'acc-pay',
+        name: 'Conta',
+        type: 'checking',
+        initialBalance: 5000,
+      );
+      await db
+          .into(db.localCreditCards)
+          .insert(
+            LocalCreditCardsCompanion.insert(
+              id: 'card-1',
+              name: 'Cartão',
+              limitAmount: const Value(5000),
+              closingDay: const Value(25),
+              dueDay: const Value(10),
+            ),
+          );
+      // Dois ciclos abertos: o de setembro (300) e o de outubro (450).
+      for (final cycle in [
+        ('buy-set', '2026-09-10', 300.0),
+        ('buy-out', '2026-10-10', 450.0),
+      ]) {
+        await db
+            .into(db.localTransactions)
+            .insert(
+              LocalTransactionsCompanion.insert(
+                id: cycle.$1,
+                type: 'expense',
+                description: 'Compra ${cycle.$1}',
+                amountPlanned: Value(cycle.$3),
+                competenceDate: cycle.$2,
+                dueDate: Value(cycle.$2),
+                status: const Value('planned'),
+                cardId: const Value('card-1'),
+              ),
+            );
+      }
+      final card = await (db.select(
+        db.localCreditCards,
+      )..where((c) => c.id.equals('card-1'))).getSingle();
+      final txs = await db.select(db.localTransactions).get();
+
+      // Paga 450 em setembro: o valor decide o ciclo, não a data.
+      final cycle = repository.openInvoiceCycle(
+        'card-1',
+        txs,
+        paymentDate: '2026-09-09',
+        amount: 450,
+      );
+      expect(cycle.map((t) => t.id), ['buy-out']);
+
+      await repository.payCardInvoice(
+        card: card,
+        transactions: cycle,
+        accountId: 'acc-pay',
+        paymentDate: '2026-09-09',
+        paidAmount: 455.30,
+        description: 'PAGTO FATURA CARTAO',
+      );
+
+      final after = await db.select(db.localTransactions).get();
+      expect(after.singleWhere((t) => t.id == 'buy-out').status, 'paid');
+      expect(after.singleWhere((t) => t.id == 'buy-set').status, 'planned');
+      final settlement = after.singleWhere(
+        (t) => FinanceRepository.isInvoiceSettlement(t),
+      );
+      expect(settlement.description, 'PAGTO FATURA CARTAO');
+      expect(settlement.amount, 455.30);
+      expect(settlement.accountId, 'acc-pay');
+    },
+  );
+
+  test('quitação de dívida debita a conta escolhida no lançamento', () async {
+    await repository.upsertAccount(
+      id: 'acc-outra',
+      name: 'Outra conta',
+      type: 'checking',
+      initialBalance: 3000,
+    );
+    await db
+        .into(db.localCategories)
+        .insert(
+          LocalCategoriesCompanion.insert(
+            id: 'cat-div',
+            name: 'Dívidas',
+            type: 'expense',
+          ),
+        );
+    await db
+        .into(db.localDebts)
+        .insert(
+          LocalDebtsCompanion.insert(
+            id: 'debt-x',
+            name: 'Empréstimo X',
+            originalAmount: 1000,
+            outstandingBalance: 1000,
+            totalInstallments: const Value(2),
+            installmentAmount: const Value(500),
+            firstDueDate: const Value('2026-09-05'),
+            accountId: const Value('acc-divida'),
+          ),
+        );
+    final debt = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-x'))).getSingle();
+
+    await repository.payDebtInstallment(
+      debt: debt,
+      plannedAmount: 500,
+      amount: 500,
+      dueDate: '2026-09-05',
+      paymentDate: '2026-09-05',
+      installmentNumber: 1,
+      categoryId: 'cat-div',
+      accountId: 'acc-outra',
+      description: 'PARCELA EMPRESTIMO',
+    );
+
+    final payment = (await db.select(db.localTransactions).get()).single;
+    expect(payment.accountId, 'acc-outra');
+    expect(payment.description, 'PARCELA EMPRESTIMO');
+    expect(FinanceRepository.isDebtPayment(payment), isTrue);
+    final updated = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-x'))).getSingle();
+    expect(updated.outstandingBalance, 500);
+    expect(updated.paidInstallments, 1);
   });
 }

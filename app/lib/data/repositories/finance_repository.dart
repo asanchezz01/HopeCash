@@ -1339,11 +1339,16 @@ class FinanceRepository {
   /// liquidação — um débito único na conta escolhida. A liquidação carrega
   /// account_id E card_id ao mesmo tempo, convenção que a exclui das
   /// estatísticas de gastos (o gasto real já foi contado em cada compra).
+  /// [paidAmount] e [description] sobrescrevem o total do ciclo e o texto
+  /// padrão quando a quitação vem de um lançamento avulso: o que saiu da conta
+  /// pode divergir do total em aberto (juros, IOF, pagamento a maior).
   Future<double> payCardInvoice({
     required LocalCreditCard card,
     required List<LocalTransaction> transactions,
     required String accountId,
     required String paymentDate,
+    double? paidAmount,
+    String? description,
   }) async {
     var total = 0.0;
     for (final tx in transactions) {
@@ -1353,8 +1358,11 @@ class FinanceRepository {
       total += tx.type == 'income' ? -v : v;
       await markPaid(tx);
     }
-    total = (total * 100).roundToDouble() / 100;
+    total = _roundMoney(paidAmount ?? total);
     if (total <= 0) return 0;
+    final label = description?.trim().isNotEmpty ?? false
+        ? description!.trim()
+        : 'Pagamento fatura ${card.name}';
 
     final id = _uuid.v4();
     await db
@@ -1363,7 +1371,7 @@ class FinanceRepository {
           LocalTransactionsCompanion.insert(
             id: id,
             type: 'expense',
-            description: 'Pagamento fatura ${card.name}',
+            description: label,
             amount: Value(total),
             amountPlanned: Value(total),
             competenceDate: paymentDate,
@@ -1381,7 +1389,7 @@ class FinanceRepository {
       op: 'create',
       payload: {
         'type': 'expense',
-        'description': 'Pagamento fatura ${card.name}',
+        'description': label,
         'amount': total,
         'amount_planned': total,
         'competence_date': paymentDate,
@@ -1392,6 +1400,43 @@ class FinanceRepository {
       },
     );
     return total;
+  }
+
+  /// Ciclo de fatura que um pagamento avulso quita: entre os ciclos em aberto
+  /// do cartão, o cujo total bate com o valor pago e, sem coincidência exata,
+  /// o de vencimento mais próximo da data do pagamento. Mesma regra da
+  /// conciliação de extrato no servidor. Vazio quando não há fatura aberta.
+  List<LocalTransaction> openInvoiceCycle(
+    String cardId,
+    List<LocalTransaction> transactions, {
+    required String paymentDate,
+    double? amount,
+  }) {
+    final cycles = <String, List<LocalTransaction>>{};
+    for (final t in transactions) {
+      if (t.cardId != cardId || t.dueDate == null) continue;
+      if (t.status != 'planned' && t.status != 'overdue') continue;
+      if (isInvoiceSettlement(t)) continue; // liquidação não é compra
+      cycles.putIfAbsent(t.dueDate!, () => []).add(t);
+    }
+    if (cycles.isEmpty) return const [];
+    double totalOf(List<LocalTransaction> list) => _roundMoney(
+      list.fold<double>(0, (sum, t) {
+        final v = t.amountPlanned ?? t.amount ?? 0;
+        return sum + (t.type == 'income' ? -v : v);
+      }),
+    );
+    final keys = cycles.keys.toList();
+    if (amount != null) {
+      final exact = keys.where((k) => (totalOf(cycles[k]!) - amount).abs() < 0.005);
+      if (exact.isNotEmpty) return cycles[exact.first]!;
+    }
+    keys.sort((a, b) {
+      final da = DateTime.parse(a).difference(DateTime.parse(paymentDate)).abs();
+      final db = DateTime.parse(b).difference(DateTime.parse(paymentDate)).abs();
+      return da.compareTo(db);
+    });
+    return cycles[keys.first]!;
   }
 
   /// Liquidação de fatura: débito em conta vinculado a um cartão.
@@ -2497,6 +2542,8 @@ class FinanceRepository {
     double interestAmount = 0,
     String? categoryId,
     String? subcategoryId,
+    String? accountId,
+    String? description,
   }) async {
     if (amount <= 0) {
       throw ArgumentError.value(amount, 'amount', 'Valor deve ser positivo');
@@ -2547,7 +2594,11 @@ class FinanceRepository {
         : (debt.paidInstallments + 1).clamp(0, debt.totalInstallments).toInt();
     final installmentsAdvanced = paidInstallments - debt.paidInstallments;
     final now = _now();
-    final description = debt.totalInstallments > 1
+    // Conta do débito: a escolhida no lançamento ou, por padrão, a da dívida.
+    final paymentAccountId = accountId ?? debt.accountId;
+    final label = description?.trim().isNotEmpty ?? false
+        ? description!.trim()
+        : debt.totalInstallments > 1
         ? 'Pagamento ${debt.name} ($installmentNumber/${debt.totalInstallments})'
         : 'Pagamento ${debt.name}';
     final notes = _debtPaymentNote(
@@ -2564,14 +2615,14 @@ class FinanceRepository {
             LocalTransactionsCompanion.insert(
               id: transactionId,
               type: 'expense',
-              description: description,
+              description: label,
               amount: Value(paidAmount),
               amountPlanned: Value(planned),
               competenceDate: paymentDate,
               dueDate: Value(dueDate),
               paymentDate: Value(paymentDate),
               status: const Value('paid'),
-              accountId: Value(debt.accountId),
+              accountId: Value(paymentAccountId),
               categoryId: Value(effectiveCategoryId),
               subcategoryId: Value(effectiveSubcategoryId),
               notes: Value(notes),
@@ -2598,14 +2649,14 @@ class FinanceRepository {
         op: 'create',
         payload: {
           'type': 'expense',
-          'description': description,
+          'description': label,
           'amount': paidAmount,
           'amount_planned': planned,
           'competence_date': paymentDate,
           'due_date': dueDate,
           'payment_date': paymentDate,
           'status': 'paid',
-          'account_id': debt.accountId,
+          'account_id': paymentAccountId,
           'category_id': effectiveCategoryId,
           'subcategory_id': effectiveSubcategoryId,
           'notes': notes,
@@ -2641,7 +2692,7 @@ class FinanceRepository {
                 competenceDate: paymentDate,
                 paymentDate: Value(paymentDate),
                 status: const Value('paid'),
-                accountId: Value(debt.accountId),
+                accountId: Value(paymentAccountId),
                 categoryId: Value(interestCategoryId),
                 updatedAt: Value(now),
                 syncStatus: const Value('pending'),
@@ -2660,7 +2711,7 @@ class FinanceRepository {
             'due_date': null,
             'payment_date': paymentDate,
             'status': 'paid',
-            'account_id': debt.accountId,
+            'account_id': paymentAccountId,
             'category_id': interestCategoryId,
             'subcategory_id': null,
             'notes': null,

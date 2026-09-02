@@ -100,6 +100,7 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _saving = true);
     final amount = parseMoney(_amount.text)!;
+    final net = amount - _discountValue;
     await ref
         .read(financeRepositoryProvider)
         .payDebtInstallment(
@@ -118,7 +119,7 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
     if (mounted) {
       Navigator.of(context).pop();
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Pagamento registrado: ${formatMoney(amount)}')),
+        SnackBar(content: Text('Pagamento registrado: ${formatMoney(net)}')),
       );
     }
   }
@@ -160,7 +161,7 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                   decimal: true,
                 ),
                 decoration: InputDecoration(
-                  labelText: 'Valor pago',
+                  labelText: 'Valor da baixa',
                   prefixText: 'R\$ ',
                   prefixIcon: const Icon(Icons.payments_outlined),
                   helperText:
@@ -171,9 +172,9 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                   if (parsed == null || parsed <= 0) {
                     return 'Informe um valor válido';
                   }
-                  // Só a parte que amortiza (valor pago − juros/multa +
-                  // desconto) é limitada pelo saldo devedor.
-                  if (parsed - _interestValue + _discountValue >
+                  // Só a parte que amortiza (valor da baixa − juros/multa)
+                  // é limitada pelo saldo devedor.
+                  if (parsed - _interestValue >
                       widget.debt.outstandingBalance + 0.005) {
                     return 'Amortização maior que o saldo devedor';
                   }
@@ -219,8 +220,8 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                   prefixText: 'R\$ ',
                   prefixIcon: Icon(Icons.discount_outlined),
                   helperText:
-                      'Abatido do saldo devedor sem sair do caixa: a dívida '
-                      'cai mais do que o valor pago.',
+                      'A parcela é quitada pelo valor cheio; só o líquido '
+                      '(valor da baixa − desconto) movimenta a conta.',
                   helperMaxLines: 3,
                 ),
                 validator: (v) {
@@ -230,9 +231,8 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                     return 'Informe um valor válido';
                   }
                   final total = parseMoney(_amount.text) ?? 0;
-                  if (total - _interestValue + parsed >
-                      widget.debt.outstandingBalance + 0.005) {
-                    return 'Amortização maior que o saldo devedor';
+                  if (parsed >= total - _interestValue) {
+                    return 'Deve ser menor que o valor da baixa';
                   }
                   return null;
                 },

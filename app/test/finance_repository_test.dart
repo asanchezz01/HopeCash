@@ -1514,7 +1514,7 @@ void main() {
     await repository.payDebtInstallment(
       debt: debt,
       plannedAmount: 500,
-      amount: 450,
+      amount: 500,
       dueDate: dueDate,
       paymentDate: dueDate,
       installmentNumber: 1,
@@ -1525,7 +1525,7 @@ void main() {
     final afterPay = await (db.select(
       db.localDebts,
     )..where((d) => d.id.equals('debt-disc'))).getSingle();
-    // Saiu 450 do caixa, mas a dívida caiu 500.
+    // A parcela de 500 foi quitada, mas só 450 saíram do caixa.
     expect(afterPay.outstandingBalance, 500);
     expect(afterPay.paidInstallments, 1);
     final tx = await (db.select(db.localTransactions)..limit(1)).getSingle();

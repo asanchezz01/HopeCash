@@ -231,8 +231,8 @@ class DebtPaymentLink {
   final int installmentNumber;
   final int installmentsAdvanced;
 
-  /// Desconto de antecipação amortizado sem saída de caixa: o saldo devedor
-  /// caiu `amount + discount`, então o estorno precisa devolver os dois.
+  /// Desconto de antecipação: o saldo devedor caiu `amount + discount`,
+  /// então o estorno precisa devolver os dois.
   final double discount;
 }
 
@@ -2540,8 +2540,8 @@ class FinanceRepository {
   /// referente a juros/multa (ex.: parcela em atraso): ela não amortiza o
   /// saldo devedor e vira um lançamento pago separado na categoria
   /// "Juros e Multas" (criada automaticamente se não existir).
-  /// [discountAmount] é o desconto de antecipação: abate do saldo devedor
-  /// sem saída de caixa (amortiza mais do que foi pago).
+  /// [discountAmount] é o desconto de antecipação: a parcela é quitada pelo
+  /// valor cheio, mas só o líquido ([amount] − desconto) movimenta a conta.
   Future<void> payDebtInstallment({
     required LocalDebt debt,
     required double plannedAmount,
@@ -2591,10 +2591,16 @@ class FinanceRepository {
         'Categoria da dívida é obrigatória para registrar a baixa',
       );
     }
-    final paidAmount = _roundMoney(amount - interest);
-    // O desconto abate o saldo sem sair do caixa: a amortização é maior que
-    // o valor pago.
-    final amortized = _roundMoney(paidAmount + discount);
+    // A parcela é quitada pelo valor cheio; o desconto sai só do caixa.
+    final amortized = _roundMoney(amount - interest);
+    final paidAmount = _roundMoney(amortized - discount);
+    if (paidAmount <= 0) {
+      throw ArgumentError.value(
+        discountAmount,
+        'discountAmount',
+        'Desconto deve ser menor que o valor da baixa',
+      );
+    }
     if (amortized - debt.outstandingBalance > 0.005) {
       throw ArgumentError.value(
         amount,

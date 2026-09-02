@@ -4,7 +4,7 @@ import { applyScope } from '../../../core/syncRepo.js';
 
 export const searchCategories = {
   name: 'search_categories',
-  description: 'Busca categorias pelo nome (correspondência parcial) para resolver o id a partir do que o usuário citou na frase. Inclui categorias padrão do sistema.',
+  description: 'Busca categorias pelo nome (correspondência parcial) para resolver o id a partir do que o usuário citou na frase. Inclui categorias padrão do sistema e as subcategorias de cada categoria encontrada.',
   scope: 'read',
   inputSchema: {
     type: 'object',
@@ -23,7 +23,20 @@ export const searchCategories = {
       .whereNull('deleted_at').where('name', 'like', `%${query}%`);
     if (type) q.where('type', type);
     const rows = await q.limit(20).select('id', 'name', 'type', 'icon', 'color');
-    return { categories: rows };
+    // Sem as subcategorias aqui o modelo nunca sabe que elas existem e todo
+    // lançamento acaba só na categoria pai.
+    const subs = rows.length
+      ? await applyScope(db('subcategories'), 'subcategories', auth)
+        .whereNull('deleted_at').whereIn('category_id', rows.map((r) => r.id))
+        .select('id', 'name', 'category_id')
+      : [];
+    return {
+      categories: rows.map((row) => ({
+        ...row,
+        subcategories: subs.filter((sub) => sub.category_id === row.id)
+          .map(({ id, name }) => ({ id, name })),
+      })),
+    };
   },
 };
 

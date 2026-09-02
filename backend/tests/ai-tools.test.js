@@ -377,8 +377,13 @@ describe('IA — toolbox financeira', () => {
   });
 
   it('search_categories e search_accounts resolvem nomes citados', async () => {
+    await api.post('/api/v1/categories/subcategories').set(auth(token))
+      .send({ name: 'Feira', category_id: expenseCategoryId });
     const cats = await callTool('search_categories', { query: 'merc' });
-    expect(cats.body.data.categories.some((c) => c.id === expenseCategoryId)).toBe(true);
+    const found = cats.body.data.categories.find((c) => c.id === expenseCategoryId);
+    expect(found).toBeDefined();
+    // Sem a lista de subcategorias a Hope nunca chega a preencher subcategory_id.
+    expect(found.subcategories).toEqual([expect.objectContaining({ name: 'Feira' })]);
 
     const accs = await callTool('search_accounts', { query: 'principal' });
     expect(accs.body.data.accounts.some((a) => a.id === accountId)).toBe(true);

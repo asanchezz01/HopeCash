@@ -124,6 +124,33 @@ describe('Ações da Hope — confirmação em duas fases', () => {
     expect(audit.some((row) => row.action === 'create')).toBe(true);
   });
 
+  it('proposta identifica a subcategoria na mensagem e no card', async () => {
+    const sub = await api.post('/api/v1/categories/subcategories').set(auth(token))
+      .send({ name: 'Supermercado', category_id: categoryId });
+    const parseOut = {
+      type: 'expense', amount: 80, description: 'Compra do mês', date: today(),
+      category_id: categoryId, subcategory_id: sub.body.data.id,
+      account_id: accountId, card_id: null,
+      installments: 1, paid: true, confidence: 'high',
+    };
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: JSON.stringify(parseOut) } }] }),
+    }));
+
+    const chat = await api.post('/api/v1/ai/chat').set(auth(token))
+      .send({ message: 'lança 80 reais de mercado hoje no Nubank' });
+    expect(chat.status).toBe(200);
+    expect(chat.text).toContain('Supermercado');
+    const action = eventData(chat.text, 'action');
+    expect(action.summary.fields).toEqual(expect.arrayContaining([
+      expect.objectContaining({ label: 'Categoria', value: 'Mercado IA · Supermercado' }),
+    ]));
+
+    const confirmed = await api.post(`/api/v1/ai/actions/${action.id}/confirm`).set(auth(token));
+    expect(confirmed.body.data.result.subcategory_id).toBe(sub.body.data.id);
+  });
+
   it('extração indisponível cai para o loop do agente e ainda propõe', async () => {
     // 1ª chamada (parse): resposta sem .json() → erro tratado, rota cai para o loop.
     vi.stubGlobal('fetch', groqStream(

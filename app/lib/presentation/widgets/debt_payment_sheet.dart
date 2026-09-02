@@ -53,6 +53,7 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
   final _formKey = GlobalKey<FormState>();
   late final TextEditingController _amount;
   final _interest = TextEditingController();
+  final _discount = TextEditingController();
   late String _paymentDate;
   String? _categoryId;
   String? _subcategoryId;
@@ -73,11 +74,15 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
   void dispose() {
     _amount.dispose();
     _interest.dispose();
+    _discount.dispose();
     super.dispose();
   }
 
   double get _interestValue =>
       _interest.text.trim().isEmpty ? 0 : (parseMoney(_interest.text) ?? 0);
+
+  double get _discountValue =>
+      _discount.text.trim().isEmpty ? 0 : (parseMoney(_discount.text) ?? 0);
 
   Future<void> _pickDate() async {
     final picked = await showDatePicker(
@@ -105,6 +110,7 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
           paymentDate: _paymentDate,
           installmentNumber: widget.installmentNumber,
           interestAmount: _interestValue,
+          discountAmount: _discountValue,
           categoryId: _categoryId,
           subcategoryId: _subcategoryId,
         );
@@ -165,9 +171,9 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                   if (parsed == null || parsed <= 0) {
                     return 'Informe um valor válido';
                   }
-                  // Só a parte que amortiza (valor pago − juros/multa) é
-                  // limitada pelo saldo devedor.
-                  if (parsed - _interestValue >
+                  // Só a parte que amortiza (valor pago − juros/multa +
+                  // desconto) é limitada pelo saldo devedor.
+                  if (parsed - _interestValue + _discountValue >
                       widget.debt.outstandingBalance + 0.005) {
                     return 'Amortização maior que o saldo devedor';
                   }
@@ -198,6 +204,35 @@ class _DebtPaymentSheetState extends ConsumerState<_DebtPaymentSheet> {
                   final total = parseMoney(_amount.text);
                   if (total != null && parsed >= total) {
                     return 'Deve ser menor que o valor pago';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 12),
+              TextFormField(
+                controller: _discount,
+                keyboardType: const TextInputType.numberWithOptions(
+                  decimal: true,
+                ),
+                decoration: const InputDecoration(
+                  labelText: 'Desconto de antecipação (opcional)',
+                  prefixText: 'R\$ ',
+                  prefixIcon: Icon(Icons.discount_outlined),
+                  helperText:
+                      'Abatido do saldo devedor sem sair do caixa: a dívida '
+                      'cai mais do que o valor pago.',
+                  helperMaxLines: 3,
+                ),
+                validator: (v) {
+                  if (v == null || v.trim().isEmpty) return null;
+                  final parsed = parseMoney(v);
+                  if (parsed == null || parsed < 0) {
+                    return 'Informe um valor válido';
+                  }
+                  final total = parseMoney(_amount.text) ?? 0;
+                  if (total - _interestValue + parsed >
+                      widget.debt.outstandingBalance + 0.005) {
+                    return 'Amortização maior que o saldo devedor';
                   }
                   return null;
                 },

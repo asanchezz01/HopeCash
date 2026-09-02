@@ -1473,6 +1473,77 @@ void main() {
     expect(FinanceRepository.isDebtPayment(tx), isTrue);
   });
 
+  test('baixa com desconto de antecipação amortiza mais que o valor pago', () async {
+    final now = DateTime.now();
+    final dueDate = _isoDate(now);
+    await repository.upsertAccount(
+      id: 'acc-disc',
+      name: 'Conta',
+      type: 'checking',
+      initialBalance: 2000,
+    );
+    await db
+        .into(db.localCategories)
+        .insert(
+          LocalCategoriesCompanion.insert(
+            id: 'cat-disc',
+            name: 'Financiamentos',
+            type: 'expense',
+          ),
+        );
+    await db
+        .into(db.localDebts)
+        .insert(
+          LocalDebtsCompanion.insert(
+            id: 'debt-disc',
+            name: 'Empréstimo',
+            type: const Value('loan'),
+            originalAmount: 1000,
+            outstandingBalance: 1000,
+            totalInstallments: const Value(2),
+            paidInstallments: const Value(0),
+            installmentAmount: const Value(500),
+            firstDueDate: Value(dueDate),
+            accountId: const Value('acc-disc'),
+          ),
+        );
+    final debt = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-disc'))).getSingle();
+
+    await repository.payDebtInstallment(
+      debt: debt,
+      plannedAmount: 500,
+      amount: 450,
+      dueDate: dueDate,
+      paymentDate: dueDate,
+      installmentNumber: 1,
+      discountAmount: 50,
+      categoryId: 'cat-disc',
+    );
+
+    final afterPay = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-disc'))).getSingle();
+    // Saiu 450 do caixa, mas a dívida caiu 500.
+    expect(afterPay.outstandingBalance, 500);
+    expect(afterPay.paidInstallments, 1);
+    final tx = await (db.select(db.localTransactions)..limit(1)).getSingle();
+    expect(tx.amount, 450);
+    final account = await (db.select(
+      db.localAccounts,
+    )..where((a) => a.id.equals('acc-disc'))).getSingle();
+    expect(await repository.accountBalance(account), 1550);
+
+    // Estorno devolve o desconto junto com o valor pago.
+    await repository.deleteTransaction(tx);
+    final restored = await (db.select(
+      db.localDebts,
+    )..where((d) => d.id.equals('debt-disc'))).getSingle();
+    expect(restored.outstandingBalance, 1000);
+    expect(restored.paidInstallments, 0);
+  });
+
   test('baixa antiga de dívida pode receber categoria depois', () async {
     final now = DateTime.now();
     final month =

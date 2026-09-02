@@ -48,13 +48,14 @@ const truncate = (text) => (text.length > MAX_RESULT_CHARS
   ? `${text.slice(0, MAX_RESULT_CHARS)}…(resultado truncado)`
   : text);
 
-const proposalAnswer = (params, { account, card, category }) => {
+const proposalAnswer = (params, { account, card, category, subcategory }) => {
   const kind = params.type === 'income' ? 'receita' : 'despesa';
   const dateLabel = params.date === today() ? 'hoje' : `em ${formatDateBR(params.date)}`;
   let detail = `**${kind === 'receita' ? 'Receita' : 'Despesa'} de ${formatMoney(params.amount)}** — ${params.description}, ${dateLabel}`;
   if (card) detail += `, no cartão ${card.name}`;
   else if (account) detail += `, na conta ${account.name}`;
   if (category) detail += `, categoria ${category.name}`;
+  if (subcategory) detail += ` · ${subcategory.name}`;
   return `Criei a proposta: ${detail}. Revise o card e toque em Confirmar ou Recusar.`;
 };
 
@@ -68,8 +69,9 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
   if (!context.conversationId || !matchesDirectTransaction(transcript)) return null;
 
   try {
-    const [categories, accounts, cards] = await Promise.all([
+    const [categories, subcategories, accounts, cards] = await Promise.all([
       syncRepo.list('categories', auth, { limit: 200 }),
+      syncRepo.list('subcategories', auth, { limit: 500 }),
       syncRepo.list('bank_accounts', auth, { limit: 50, filters: { is_active: 1 } }),
       syncRepo.list('credit_cards', auth, { limit: 50, filters: { is_active: 1 } }),
     ]);
@@ -82,7 +84,7 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
       timeoutMs: PARSE_TIMEOUT_MS,
       messages: [
         { role: 'system', content: parseSystemPrompt(today()) },
-        { role: 'user', content: parseUserPayload({ transcript, categories, accounts, cards }) },
+        { role: 'user', content: parseUserPayload({ transcript, categories, subcategories, accounts, cards }) },
       ],
     });
     const parsed = parseOutputSchema.safeParse(raw);
@@ -94,6 +96,9 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
 
     // Os ids vêm do modelo, mas só valem se existirem mesmo para o usuário.
     const category = categories.find((c) => c.id === out.category_id && c.type === out.type) ?? null;
+    const subcategory = category
+      ? subcategories.find((sc) => sc.id === out.subcategory_id && sc.category_id === category.id) ?? null
+      : null;
     const account = accounts.find((a) => a.id === out.account_id) ?? null;
     const card = out.type === 'expense' ? cards.find((c) => c.id === out.card_id) ?? null : null;
 
@@ -106,12 +111,13 @@ export async function deterministicWriteRoute(auth, history, events = {}, contex
       ...(account && !card ? { account_id: account.id } : {}),
       ...(card ? { card_id: card.id } : {}),
       ...(category ? { category_id: category.id } : {}),
+      ...(subcategory ? { subcategory_id: subcategory.id } : {}),
     };
 
     events.onTool?.('create_transaction');
     const result = await callTool('create_transaction', auth, params, context);
     events.onAction?.(result.action);
-    const content = proposalAnswer(params, { account, card, category });
+    const content = proposalAnswer(params, { account, card, category, subcategory });
     events.onDelta?.(content);
     return {
       content,

@@ -110,12 +110,14 @@ String _debtPaymentNote({
   required String dueDate,
   required int installmentNumber,
   required int installmentsAdvanced,
+  double discount = 0,
 }) {
   final payload = {
     'debt_id': debtId,
     'due_date': dueDate,
     'installment_number': installmentNumber,
     'installments_advanced': installmentsAdvanced,
+    if (discount > 0) 'discount': discount,
   };
   return '$_debtPaymentNotePrefix${jsonEncode(payload)}';
 }
@@ -139,6 +141,7 @@ DebtPaymentLink? _debtPaymentInfo(LocalTransaction tx) {
       dueDate: dueDate,
       installmentNumber: installmentNumber,
       installmentsAdvanced: installmentsAdvanced,
+      discount: (data['discount'] as num?)?.toDouble() ?? 0,
     );
   } catch (_) {
     return null;
@@ -220,12 +223,17 @@ class DebtPaymentLink {
     required this.dueDate,
     required this.installmentNumber,
     required this.installmentsAdvanced,
+    this.discount = 0,
   });
 
   final String debtId;
   final String dueDate;
   final int installmentNumber;
   final int installmentsAdvanced;
+
+  /// Desconto de antecipação amortizado sem saída de caixa: o saldo devedor
+  /// caiu `amount + discount`, então o estorno precisa devolver os dois.
+  final double discount;
 }
 
 class DebtInstallmentPreview {
@@ -2532,6 +2540,8 @@ class FinanceRepository {
   /// referente a juros/multa (ex.: parcela em atraso): ela não amortiza o
   /// saldo devedor e vira um lançamento pago separado na categoria
   /// "Juros e Multas" (criada automaticamente se não existir).
+  /// [discountAmount] é o desconto de antecipação: abate do saldo devedor
+  /// sem saída de caixa (amortiza mais do que foi pago).
   Future<void> payDebtInstallment({
     required LocalDebt debt,
     required double plannedAmount,
@@ -2540,6 +2550,7 @@ class FinanceRepository {
     required String paymentDate,
     required int installmentNumber,
     double interestAmount = 0,
+    double discountAmount = 0,
     String? categoryId,
     String? subcategoryId,
     String? accountId,
@@ -2563,6 +2574,14 @@ class FinanceRepository {
         'Juros/multa deve ser menor que o valor pago',
       );
     }
+    final discount = _roundMoney(discountAmount);
+    if (discount < 0) {
+      throw ArgumentError.value(
+        discountAmount,
+        'discountAmount',
+        'Desconto não pode ser negativo',
+      );
+    }
     final effectiveCategoryId = categoryId ?? debt.categoryId;
     final effectiveSubcategoryId = subcategoryId ?? debt.subcategoryId;
     if (effectiveCategoryId == null || effectiveCategoryId.isEmpty) {
@@ -2573,7 +2592,10 @@ class FinanceRepository {
       );
     }
     final paidAmount = _roundMoney(amount - interest);
-    if (paidAmount - debt.outstandingBalance > 0.005) {
+    // O desconto abate o saldo sem sair do caixa: a amortização é maior que
+    // o valor pago.
+    final amortized = _roundMoney(paidAmount + discount);
+    if (amortized - debt.outstandingBalance > 0.005) {
       throw ArgumentError.value(
         amount,
         'amount',
@@ -2586,7 +2608,7 @@ class FinanceRepository {
     final transactionId = _uuid.v4();
     final planned = _roundMoney(plannedAmount);
     final outstanding = _roundMoney(
-      (debt.outstandingBalance - paidAmount).clamp(0, double.infinity),
+      (debt.outstandingBalance - amortized).clamp(0, double.infinity),
     );
     final status = outstanding <= 0 ? 'paid_off' : 'active';
     final paidInstallments = status == 'paid_off'
@@ -2606,6 +2628,7 @@ class FinanceRepository {
       dueDate: dueDate,
       installmentNumber: installmentNumber,
       installmentsAdvanced: installmentsAdvanced,
+      discount: discount,
     );
 
     await db.transaction(() async {
@@ -2774,7 +2797,9 @@ class FinanceRepository {
     if (debt == null) return;
 
     final amount = _roundMoney(tx.amount ?? tx.amountPlanned ?? 0);
-    final outstanding = _roundMoney(debt.outstandingBalance + amount);
+    final outstanding = _roundMoney(
+      debt.outstandingBalance + amount + info.discount,
+    );
     final paidInstallments = (debt.paidInstallments - info.installmentsAdvanced)
         .clamp(0, debt.totalInstallments)
         .toInt();

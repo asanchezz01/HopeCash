@@ -12,6 +12,11 @@ const GOAL_NOTE_PREFIX = 'hopecash:goal_movement:';
 const round2 = (value) => Math.round(Number(value) * 100) / 100;
 const expiresAt = () => new Date(Date.now() + ACTION_TTL_MS).toISOString().slice(0, 23).replace('T', ' ');
 const field = (label, value, kind = 'text') => ({ label, value, kind });
+// A subcategoria vai junto da categoria no resumo: o card do chat lista os
+// campos como vêm daqui, então sem isso ela sumia da proposta.
+const categoryLabel = (category, subcategory) => (category
+  ? `${category.name}${subcategory ? ` · ${subcategory.name}` : ''}`
+  : 'Sem categoria');
 
 const cardDueDate = (purchaseDate, closingDay, dueDay) => {
   const date = new Date(`${purchaseDate}T00:00:00Z`);
@@ -180,7 +185,7 @@ async function prepareCreateTransaction(auth, params) {
             ?? (assumedAccount ? `${account.name} (assumida — ${assumedAccount})` : account?.name)
             ?? 'Não informada',
         ),
-        field('Categoria', splits ? `${splits.length} categorias (rateio)` : category?.name ?? 'Sem categoria'),
+        field('Categoria', splits ? `${splits.length} categorias (rateio)` : categoryLabel(category, subcategory)),
         field('Situação', paid ? 'Pago' : 'Previsto'),
       ],
     },
@@ -296,7 +301,7 @@ async function prepareBudgetItem(auth, params) {
   assertWritable(auth, payload.family_id);
   return {
     payload,
-    summary: { title: 'Item de orçamento', fields: [field('Mês', params.month), field('Categoria', category.name), field('Valor previsto', payload.planned_amount, 'money'), ...(payload.due_day ? [field('Dia', payload.due_day)] : [])] },
+    summary: { title: 'Item de orçamento', fields: [field('Mês', params.month), field('Categoria', categoryLabel(category, subcategory)), field('Valor previsto', payload.planned_amount, 'money'), ...(payload.due_day ? [field('Dia', payload.due_day)] : [])] },
   };
 }
 

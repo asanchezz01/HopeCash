@@ -6,7 +6,7 @@ import { crudRouter } from '../../core/crudRouter.js';
 import { syncRepo } from '../../core/syncRepo.js';
 import { notFound, badRequest } from '../../utils/httpError.js';
 import { monthStart, addMonths } from '../../utils/time.js';
-import { getBudgetSummary } from './budgets.service.js';
+import { getBudgetSummary, realizedBudgetSeed } from './budgets.service.js';
 
 const router = Router();
 
@@ -17,25 +17,27 @@ router.get('/:id/summary', async (req, res) => {
   res.json({ data: await getBudgetSummary(req.auth, budget) });
 });
 
-/** Copia o orçamento (itens) de um mês anterior para um novo mês. */
+/**
+ * Gera o orçamento de um mês a partir de outro: os itens saem do orçamento do
+ * mês de origem (`source: 'budget'`) ou do que foi de fato gasto/recebido nele
+ * (`source: 'realized'`). Com `replace`, um orçamento já existente no destino
+ * é reescrito no lugar de recusar.
+ */
 router.post('/copy', validate(z.object({
   source_month: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
   target_month: z.string().regex(/^\d{4}-\d{2}(-\d{2})?$/),
+  source: z.enum(['budget', 'realized']).default('budget'),
+  replace: z.boolean().default(false),
 })), async (req, res) => {
   const sourceMonth = monthStart(`${req.body.source_month.slice(0, 7)}-01`);
   const targetMonth = monthStart(`${req.body.target_month.slice(0, 7)}-01`);
-  const [source] = await syncRepo.list('budgets', req.auth, { limit: 1, filters: { reference_month: sourceMonth } });
-  if (!source) throw notFound('Orçamento de origem não encontrado');
-  const [existing] = await syncRepo.list('budgets', req.auth, { limit: 1, filters: { reference_month: targetMonth } });
-  if (existing) throw badRequest('Já existe orçamento para o mês de destino');
+  const fromRealized = req.body.source === 'realized';
 
-  const budget = await syncRepo.create('budgets', req.auth, {
-    reference_month: targetMonth, scope: source.scope, notes: source.notes, family_id: source.family_id,
-  }, { req });
-  const items = await syncRepo.list('budget_items', req.auth, { limit: 200, filters: { budget_id: source.id } });
-  for (const item of items) {
-    await syncRepo.create('budget_items', req.auth, {
-      budget_id: budget.id,
+  const [origin] = await syncRepo.list('budgets', req.auth, { limit: 1, filters: { reference_month: sourceMonth } });
+  if (!origin && !fromRealized) throw notFound('Orçamento de origem não encontrado');
+  const seed = fromRealized
+    ? await realizedBudgetSeed(req.auth, sourceMonth)
+    : (await syncRepo.list('budget_items', req.auth, { limit: 200, filters: { budget_id: origin.id } })).map((item) => ({
       category_id: item.category_id,
       subcategory_id: item.subcategory_id,
       planned_amount: item.planned_amount,
@@ -44,9 +46,23 @@ router.post('/copy', validate(z.object({
       account_id: item.account_id,
       card_id: item.card_id,
       family_id: item.family_id,
-    }, { req });
+    }));
+  if (!seed.length) throw notFound('Nada a copiar no mês de origem');
+
+  const [existing] = await syncRepo.list('budgets', req.auth, { limit: 1, filters: { reference_month: targetMonth } });
+  if (existing && !req.body.replace) throw badRequest('Já existe orçamento para o mês de destino');
+
+  const budget = existing ?? await syncRepo.create('budgets', req.auth, {
+    reference_month: targetMonth, scope: origin?.scope ?? 'personal', notes: origin?.notes, family_id: origin?.family_id,
+  }, { req });
+  if (existing) {
+    const old = await syncRepo.list('budget_items', req.auth, { limit: 200, filters: { budget_id: existing.id } });
+    for (const item of old) await syncRepo.softDelete('budget_items', req.auth, item.id, { req });
   }
-  res.status(201).json({ data: budget });
+  for (const item of seed) {
+    await syncRepo.create('budget_items', req.auth, { budget_id: budget.id, ...item }, { req });
+  }
+  res.status(existing ? 200 : 201).json({ data: budget });
 });
 
 /** Sugestão de orçamento: média de gastos por categoria dos últimos N meses. */

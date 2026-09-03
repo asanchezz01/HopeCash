@@ -94,3 +94,41 @@ export async function findBudgetForMonth(auth, month) {
   const [budget] = await syncRepo.list('budgets', auth, { limit: 1, filters: { reference_month: referenceMonth } });
   return budget ?? null;
 }
+
+/**
+ * Itens de orçamento derivados do realizado de um mês (YYYY-MM ou YYYY-MM-01):
+ * uma linha por subcategoria movimentada, mais o que sobrou da categoria fora
+ * delas. Conta e cartão ficam de fora — o item vale para a categoria toda.
+ */
+export async function realizedBudgetSeed(auth, month) {
+  const monthStart = `${String(month).slice(0, 7)}-01`;
+  const transactions = await db('transactions')
+    .where({ user_id: auth.userId })
+    .whereIn('type', ['income', 'expense'])
+    .whereNull('deleted_at')
+    .whereNot('status', 'canceled')
+    .where('competence_date', '>=', monthStart)
+    .where('competence_date', '<', addMonths(monthStart, 1));
+
+  const totals = new Map();
+  for (const transaction of transactions) {
+    // Pagamento de fatura movimenta a conta, mas não é um novo gasto.
+    if (transaction.account_id && transaction.card_id) continue;
+    if (!transaction.category_id) continue;
+    const key = `${transaction.category_id}|${transaction.subcategory_id ?? ''}`;
+    const amount = Number(transaction.amount ?? transaction.amount_planned ?? 0);
+    totals.set(key, (totals.get(key) ?? 0) + amount);
+  }
+
+  return [...totals.entries()]
+    .filter(([, amount]) => amount >= 0.01)
+    .map(([key, amount]) => {
+      const [categoryId, subcategoryId] = key.split('|');
+      return {
+        category_id: categoryId,
+        subcategory_id: subcategoryId || null,
+        planned_amount: Math.round(amount * 100) / 100,
+        is_fixed: false,
+      };
+    });
+}

@@ -75,3 +75,49 @@ describe('Controle orçamentário por conta', () => {
     ]));
   });
 });
+
+describe('Geração de orçamento', () => {
+  it('reescreve o orçamento do mês com base no realizado do mês anterior', async () => {
+    const user = await registerUser(api);
+    const t = user.access_token;
+    const account = await api.post('/api/v1/accounts').set(auth(t)).send({
+      name: 'Conta', type: 'checking', initial_balance: 0,
+    });
+    const category = await api.post('/api/v1/categories').set(auth(t)).send({
+      name: 'Mercado', type: 'expense',
+    });
+    const august = await api.post('/api/v1/budgets').set(auth(t)).send({ reference_month: '2026-08-01' });
+    await api.post('/api/v1/budgets/items').set(auth(t)).send({
+      budget_id: august.body.data.id, category_id: category.body.data.id, planned_amount: 1000,
+    });
+    await api.post('/api/v1/transactions').set(auth(t)).send({
+      type: 'expense', description: 'Compras', amount: 640,
+      competence_date: '2026-08-10', payment_date: '2026-08-10', status: 'paid',
+      account_id: account.body.data.id, category_id: category.body.data.id,
+    });
+
+    // Setembro nasce do orçamento de agosto: previsto igual ao previsto.
+    const fromBudget = await api.post('/api/v1/budgets/copy').set(auth(t)).send({
+      source_month: '2026-08', target_month: '2026-09',
+    });
+    expect(fromBudget.status).toBe(201);
+    const planned = await api.get(`/api/v1/budgets/${fromBudget.body.data.id}/summary`).set(auth(t));
+    expect(planned.body.data.total_planned).toBe(1000);
+
+    // Sem replace, refazer é recusado.
+    const refused = await api.post('/api/v1/budgets/copy').set(auth(t)).send({
+      source_month: '2026-08', target_month: '2026-09', source: 'realized',
+    });
+    expect(refused.status).toBe(400);
+
+    // Com replace, os itens antigos saem e o previsto vira o realizado.
+    const redone = await api.post('/api/v1/budgets/copy').set(auth(t)).send({
+      source_month: '2026-08', target_month: '2026-09', source: 'realized', replace: true,
+    });
+    expect(redone.status).toBe(200);
+    expect(redone.body.data.id).toBe(fromBudget.body.data.id);
+    const summary = await api.get(`/api/v1/budgets/${redone.body.data.id}/summary`).set(auth(t));
+    expect(summary.body.data.items).toHaveLength(1);
+    expect(summary.body.data.total_planned).toBe(640);
+  });
+});

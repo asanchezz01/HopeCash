@@ -6,6 +6,7 @@ import '../../core/design_system/design_tokens.dart';
 import '../../core/utils/finance_calc.dart';
 import '../../core/utils/money.dart';
 import '../../data/local/database.dart';
+import '../../data/repositories/finance_repository.dart';
 import '../components/hope_components.dart';
 import '../widgets/quick_create_category.dart';
 import '../widgets/searchable_category_field.dart';
@@ -73,6 +74,23 @@ class BudgetScreen extends ConsumerWidget {
                         .then((_) => ref.read(syncServiceProvider).syncNow())
                   : () => _showBudgetItemSheet(context, budget),
             ),
+          if (budget != null)
+            PopupMenuButton<BudgetSource>(
+              tooltip: 'Gerar orçamento',
+              icon: const Icon(Icons.autorenew_rounded),
+              onSelected: (source) =>
+                  _regenerate(context, ref, month: month, source: source),
+              itemBuilder: (_) => const [
+                PopupMenuItem(
+                  value: BudgetSource.budget,
+                  child: Text('Refazer com o orçamento do mês anterior'),
+                ),
+                PopupMenuItem(
+                  value: BudgetSource.realized,
+                  child: Text('Refazer com o realizado do mês anterior'),
+                ),
+              ],
+            ),
         ],
       ),
       body: Column(
@@ -122,6 +140,76 @@ class BudgetScreen extends ConsumerWidget {
   }
 }
 
+/// Gera o orçamento de [month] a partir do mês anterior, avisando quando não
+/// há o que aproveitar lá atrás.
+Future<void> _generate(
+  BuildContext context,
+  WidgetRef ref, {
+  required String month,
+  required BudgetSource source,
+  bool replace = false,
+}) async {
+  final messenger = ScaffoldMessenger.of(context);
+  final generated = await ref
+      .read(financeRepositoryProvider)
+      .generateBudget(
+        fromMonth: _shiftMonth(month, -1),
+        toMonth: month,
+        source: source,
+        replace: replace,
+      );
+  ref.read(syncServiceProvider).syncNow();
+  if (generated != null || !context.mounted) return;
+  messenger.showSnackBar(
+    SnackBar(
+      content: Text(
+        source == BudgetSource.realized
+            ? 'O mês anterior não teve movimentação'
+            : 'O mês anterior não tem orçamento',
+      ),
+    ),
+  );
+}
+
+/// Reescreve um orçamento já existente — os itens atuais são perdidos, então
+/// pergunta antes.
+Future<void> _regenerate(
+  BuildContext context,
+  WidgetRef ref, {
+  required String month,
+  required BudgetSource source,
+}) async {
+  final base = source == BudgetSource.realized ? 'realizado' : 'orçamento';
+  final confirmed = await showDialog<bool>(
+    context: context,
+    builder: (dialogContext) => AlertDialog(
+      title: const Text('Refazer o orçamento?'),
+      content: Text(
+        'Os itens de ${_monthLabel(month)} serão substituídos pelo $base de '
+        '${_monthLabel(_shiftMonth(month, -1))}.',
+      ),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(dialogContext, false),
+          child: const Text('Cancelar'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(dialogContext, true),
+          child: const Text('Refazer'),
+        ),
+      ],
+    ),
+  );
+  if (confirmed != true || !context.mounted) return;
+  await _generate(
+    context,
+    ref,
+    month: month,
+    source: source,
+    replace: true,
+  );
+}
+
 class _NoBudget extends ConsumerWidget {
   const _NoBudget({required this.month});
 
@@ -155,25 +243,32 @@ class _NoBudget extends ConsumerWidget {
               textAlign: TextAlign.center,
             ),
             const SizedBox(height: 8),
-            OutlinedButton.icon(
-              onPressed: () async {
-                final copied = await ref
-                    .read(financeRepositoryProvider)
-                    .copyBudget(
-                      fromMonth: _shiftMonth(month, -1),
-                      toMonth: month,
-                    );
-                ref.read(syncServiceProvider).syncNow();
-                if (copied == null && context.mounted) {
-                  ScaffoldMessenger.of(context).showSnackBar(
-                    const SnackBar(
-                      content: Text('O mês anterior não tem orçamento'),
-                    ),
-                  );
-                }
-              },
-              icon: const Icon(Icons.copy_outlined, size: 18),
-              label: const Text('Copiar do mês anterior'),
+            Wrap(
+              alignment: WrapAlignment.center,
+              spacing: HopeSpacing.xs,
+              runSpacing: HopeSpacing.xs,
+              children: [
+                OutlinedButton.icon(
+                  onPressed: () => _generate(
+                    context,
+                    ref,
+                    month: month,
+                    source: BudgetSource.budget,
+                  ),
+                  icon: const Icon(Icons.copy_outlined, size: 18),
+                  label: const Text('Copiar orçamento anterior'),
+                ),
+                OutlinedButton.icon(
+                  onPressed: () => _generate(
+                    context,
+                    ref,
+                    month: month,
+                    source: BudgetSource.realized,
+                  ),
+                  icon: const Icon(Icons.history_rounded, size: 18),
+                  label: const Text('Usar realizado anterior'),
+                ),
+              ],
             ),
           ],
         ),

@@ -257,6 +257,31 @@ class GoalMovementLink {
   final String movementType;
 }
 
+/// De onde saem os valores ao gerar o orçamento de um mês a partir de outro:
+/// o que estava previsto no mês de origem, ou o que de fato aconteceu nele.
+enum BudgetSource { budget, realized }
+
+/// Item candidato do orçamento gerado, antes de virar linha no banco.
+class BudgetSeedItem {
+  const BudgetSeedItem({
+    required this.categoryId,
+    required this.plannedAmount,
+    this.subcategoryId,
+    this.isFixed = false,
+    this.dueDay,
+    this.accountId,
+    this.cardId,
+  });
+
+  final String categoryId;
+  final double plannedAmount;
+  final String? subcategoryId;
+  final bool isFixed;
+  final int? dueDay;
+  final String? accountId;
+  final String? cardId;
+}
+
 /// Repositório local-first de contas, categorias e transações.
 /// Toda escrita grava no Drift E enfileira a operação para o SyncService.
 class FinanceRepository {
@@ -3166,27 +3191,48 @@ class FinanceRepository {
     return id;
   }
 
-  /// Copia os itens do orçamento de outro mês para um novo orçamento.
-  Future<String?> copyBudget({
+  /// Gera o orçamento de [toMonth] a partir de [fromMonth]: os itens saem do
+  /// orçamento daquele mês ([BudgetSource.budget]) ou do que foi de fato
+  /// gasto/recebido nele ([BudgetSource.realized]).
+  ///
+  /// Com [replace], um orçamento já existente no destino é reescrito: os itens
+  /// antigos são apagados e substituídos pelos novos. Sem ele, um destino que
+  /// já tem orçamento é recusado (null) para não duplicar itens.
+  ///
+  /// Devolve o id do orçamento gerado, ou null se não houver o que gerar.
+  Future<String?> generateBudget({
     required String fromMonth,
     required String toMonth,
+    BudgetSource source = BudgetSource.budget,
+    bool replace = false,
   }) async {
-    final source =
+    final seed = source == BudgetSource.realized
+        ? await _realizedBudgetSeed(fromMonth)
+        : await _previousBudgetSeed(fromMonth);
+    if (seed.isEmpty) return null;
+
+    final existing =
         await (db.select(db.localBudgets)
               ..where(
-                (b) =>
-                    b.deletedAt.isNull() & b.referenceMonth.equals(fromMonth),
+                (b) => b.deletedAt.isNull() & b.referenceMonth.equals(toMonth),
               )
               ..limit(1))
             .getSingleOrNull();
-    if (source == null) return null;
-    final items = await (db.select(
-      db.localBudgetItems,
-    )..where((i) => i.deletedAt.isNull() & i.budgetId.equals(source.id))).get();
-    final newId = await createBudget(referenceMonth: toMonth);
-    for (final item in items) {
+    if (existing != null && !replace) return null;
+
+    final budgetId = existing?.id ?? await createBudget(referenceMonth: toMonth);
+    if (existing != null) {
+      final old = await (db.select(db.localBudgetItems)..where(
+            (i) => i.deletedAt.isNull() & i.budgetId.equals(existing.id),
+          ))
+          .get();
+      for (final item in old) {
+        await deleteBudgetItem(item);
+      }
+    }
+    for (final item in seed) {
       await upsertBudgetItem(
-        budgetId: newId,
+        budgetId: budgetId,
         categoryId: item.categoryId,
         subcategoryId: item.subcategoryId,
         plannedAmount: item.plannedAmount,
@@ -3196,8 +3242,68 @@ class FinanceRepository {
         cardId: item.cardId,
       );
     }
-    return newId;
+    return budgetId;
   }
+
+  /// Itens do orçamento de um mês (YYYY-MM-01), prontos para replicar.
+  Future<List<BudgetSeedItem>> _previousBudgetSeed(String month) async {
+    final source =
+        await (db.select(db.localBudgets)
+              ..where(
+                (b) => b.deletedAt.isNull() & b.referenceMonth.equals(month),
+              )
+              ..limit(1))
+            .getSingleOrNull();
+    if (source == null) return const [];
+    final items = await (db.select(
+      db.localBudgetItems,
+    )..where((i) => i.deletedAt.isNull() & i.budgetId.equals(source.id))).get();
+    return [
+      for (final item in items)
+        BudgetSeedItem(
+          categoryId: item.categoryId,
+          subcategoryId: item.subcategoryId,
+          plannedAmount: item.plannedAmount,
+          isFixed: item.isFixed,
+          dueDay: item.dueDay,
+          accountId: item.accountId,
+          cardId: item.cardId,
+        ),
+    ];
+  }
+
+  /// Itens derivados do realizado de um mês: uma linha por subcategoria
+  /// movimentada, mais o que sobrou da categoria fora delas. Conta e cartão
+  /// ficam de fora — o item vale para a categoria toda, em qualquer meio.
+  Future<List<BudgetSeedItem>> _realizedBudgetSeed(String month) async {
+    final realized = await realizedByCategoryForMonth(month.substring(0, 7));
+    final seed = <BudgetSeedItem>[];
+    for (final entry in realized.entries) {
+      if (entry.key.contains('|')) continue; // total da categoria só
+      var rest = entry.value;
+      for (final sub in realized.entries) {
+        if (!sub.key.startsWith('${entry.key}|')) continue;
+        rest -= sub.value;
+        if (sub.value <= 0) continue;
+        seed.add(
+          BudgetSeedItem(
+            categoryId: entry.key,
+            subcategoryId: sub.key.split('|')[1],
+            plannedAmount: _round2(sub.value),
+          ),
+        );
+      }
+      // Centavos de arredondamento não viram um item de R$ 0,00.
+      if (rest >= 0.01) {
+        seed.add(
+          BudgetSeedItem(categoryId: entry.key, plannedAmount: _round2(rest)),
+        );
+      }
+    }
+    return seed;
+  }
+
+  double _round2(double value) => (value * 100).roundToDouble() / 100;
 
   Future<String> upsertBudgetItem({
     String? id,

@@ -2321,4 +2321,69 @@ void main() {
     expect(updated.outstandingBalance, 500);
     expect(updated.paidInstallments, 1);
   });
+
+  test('refaz o orçamento do mês com base no realizado do mês anterior', () async {
+    for (final tx in [
+      ('mercado-1', 'market', null, 400.0),
+      ('mercado-2', 'market', 'sub-feira', 100.0),
+      ('luz', 'utilities', null, 250.0),
+    ]) {
+      await db
+          .into(db.localTransactions)
+          .insert(
+            LocalTransactionsCompanion.insert(
+              id: tx.$1,
+              type: 'expense',
+              description: tx.$1,
+              amount: Value(tx.$4),
+              competenceDate: '2026-08-10',
+              status: const Value('paid'),
+              categoryId: Value(tx.$2),
+              subcategoryId: Value(tx.$3),
+            ),
+          );
+    }
+
+    // Setembro criado a partir do orçamento de agosto: previsto = previsto.
+    final august = await repository.createBudget(referenceMonth: '2026-08-01');
+    await repository.upsertBudgetItem(
+      budgetId: august,
+      categoryId: 'market',
+      plannedAmount: 900,
+    );
+    final september = await repository.generateBudget(
+      fromMonth: '2026-08-01',
+      toMonth: '2026-09-01',
+    );
+    expect(september != null, isTrue);
+    var items = await (db.select(
+      db.localBudgetItems,
+    )..where((i) => i.deletedAt.isNull() & i.budgetId.equals(september!))).get();
+    expect(items.single.plannedAmount, 900);
+
+    // Sem replace, o mês já orçado é recusado.
+    final refused = await repository.generateBudget(
+      fromMonth: '2026-08-01',
+      toMonth: '2026-09-01',
+      source: BudgetSource.realized,
+    );
+    expect(refused == null, isTrue);
+
+    // Com replace, o previsto vira o realizado de agosto, por subcategoria.
+    final redone = await repository.generateBudget(
+      fromMonth: '2026-08-01',
+      toMonth: '2026-09-01',
+      source: BudgetSource.realized,
+      replace: true,
+    );
+    expect(redone, september);
+    items = await (db.select(
+      db.localBudgetItems,
+    )..where((i) => i.deletedAt.isNull() & i.budgetId.equals(redone!))).get();
+    expect(items, hasLength(3));
+    expect(
+      {for (final i in items) '${i.categoryId}|${i.subcategoryId}': i.plannedAmount},
+      {'market|null': 400.0, 'market|sub-feira': 100.0, 'utilities|null': 250.0},
+    );
+  });
 }

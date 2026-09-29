@@ -71,6 +71,7 @@ RUN printf 'server {\n\
   listen 80;\n\
   root /usr/share/nginx/html;\n\
   index index.html;\n\
+  absolute_redirect off;\n\
   add_header Cross-Origin-Opener-Policy same-origin always;\n\
   add_header Cross-Origin-Embedder-Policy require-corp always;\n\
 \n\

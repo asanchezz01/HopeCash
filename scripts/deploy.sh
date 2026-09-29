@@ -452,6 +452,10 @@ curl -fsS "http://127.0.0.1:${WEB_PORT}/marketing/" \
   | grep -F '<body class="marketing-page">' >/dev/null
 curl -fsS "http://127.0.0.1:${WEB_PORT}/suporte/" \
   | grep -F '<body class="support-page">' >/dev/null
+curl -fsS "http://127.0.0.1:${WEB_PORT}/privacidade/" \
+  | grep -F '<body class="privacy-page">' >/dev/null
+curl -sSI "http://127.0.0.1:${WEB_PORT}/privacidade" \
+  | grep -Fi 'Location: /privacidade/' >/dev/null
 
 # Retaguarda: valida que a SPA responde.
 curl -fsS "http://127.0.0.1:${RETAGUARDA_PORT}/" >/dev/null

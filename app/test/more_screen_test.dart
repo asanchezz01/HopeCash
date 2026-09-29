@@ -41,6 +41,7 @@ void main() {
 
     expect(find.byKey(const ValueKey('hope-menu-entry')), findsOneWidget);
     expect(find.text('Hope, sua assistente'), findsOneWidget);
+    expect(find.text('Política de Privacidade'), findsOneWidget);
     expect(
       find.text('Temporariamente indisponível — toque para tentar'),
       findsOneWidget,

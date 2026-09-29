@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart' show AutofillHints, TextInput;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/design_system/design_tokens.dart';
 import '../../core/providers.dart';
@@ -335,6 +336,21 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
               style: Theme.of(
                 context,
               ).textTheme.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            TextButton(
+              onPressed: () async {
+                if (!await launchUrl(
+                      Uri.parse('https://app.hopecash.tech/privacidade/'),
+                      mode: LaunchMode.externalApplication,
+                    ) &&
+                    mounted) {
+                  setState(
+                    () => _error =
+                        'Não foi possível abrir a Política de Privacidade.',
+                  );
+                }
+              },
+              child: const Text('Política de Privacidade'),
             ),
           ],
         ),

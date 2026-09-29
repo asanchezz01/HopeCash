@@ -33,6 +33,7 @@ void main() {
 
     expect(find.text('HopeCash'), findsOneWidget);
     expect(find.text('Entrar'), findsOneWidget);
+    expect(find.text('Política de Privacidade'), findsOneWidget);
 
     // Submeter vazio deve mostrar validações, sem chamar a API.
     await tester.tap(find.text('Entrar'));

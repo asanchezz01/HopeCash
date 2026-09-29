@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 import '../../core/design_system/design_tokens.dart';
 import '../../core/providers.dart';
@@ -261,6 +262,26 @@ class MoreScreen extends ConsumerWidget {
                   const SectionEyebrow('Ajuda e conta'),
                   _MoreGroup(
                     rows: [
+                      _MoreRow(
+                        icon: Icons.privacy_tip_outlined,
+                        color: scheme.primary,
+                        title: 'Política de Privacidade',
+                        subtitle: 'Veja como seus dados são tratados',
+                        onTap: () async {
+                          if (!await launchUrl(
+                                Uri.parse(
+                                  'https://app.hopecash.tech/privacidade/',
+                                ),
+                                mode: LaunchMode.externalApplication,
+                              ) &&
+                              context.mounted) {
+                            showHopeSnack(
+                              context,
+                              'Não foi possível abrir a Política de Privacidade.',
+                            );
+                          }
+                        },
+                      ),
                       _MoreRow(
                         icon: Icons.auto_stories_outlined,
                         color: colors.investment,

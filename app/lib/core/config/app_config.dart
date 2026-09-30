@@ -1,14 +1,17 @@
+import 'package:flutter/foundation.dart';
+
 /// Configuração de ambiente do HopeCash.
 class AppConfig {
   AppConfig._();
 
   /// URL base da API.
-  /// - Web/desktop/iOS simulator: http://localhost:3000
-  /// - Emulador Android: http://10.0.2.2:3000
-  /// Sobrescreva em build com: --dart-define=API_BASE_URL=https://api.hopecash.app
+  /// Desenvolvimento: localhost:3000; release: API pública.
+  /// Sobrescreva em build com: `--dart-define=API_BASE_URL=https://sua-api`
   static const apiBaseUrl = String.fromEnvironment(
     'API_BASE_URL',
-    defaultValue: 'http://localhost:3000',
+    defaultValue: kReleaseMode
+        ? 'https://api.hopecash.tech'
+        : 'http://localhost:3000',
   );
 
   static const apiPrefix = '/api/v1';

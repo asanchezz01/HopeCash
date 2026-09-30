@@ -106,6 +106,19 @@ jobs:
           --build-number="$ANDROID_VERSION_CODE"
           --dart-define=API_BASE_URL=https://api.hopecash.tech
 
+      - name: Verify release API URL
+        run: |
+          python3 - <<'PY'
+          import zipfile
+          with zipfile.ZipFile('build/app/outputs/bundle/release/app-release.aab') as bundle:
+              apps = [name for name in bundle.namelist() if name.endswith('/libapp.so')]
+              assert apps, 'libapp.so ausente'
+              for name in apps:
+                  code = bundle.read(name)
+                  assert b'https://api.hopecash.tech' in code, f'API publica ausente em {name}'
+                  assert b'http://localhost:3000' not in code, f'localhost presente em {name}'
+          PY
+
       - name: Verify App Bundle signature
         run: jarsigner -verify -verbose -certs build/app/outputs/bundle/release/app-release.aab
 

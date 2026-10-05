@@ -718,6 +718,23 @@ describe('Importação de extrato', () => {
       .body.data.find((t) => t.description.includes('PAGTO FATURA'));
     expect(settlement.card_id).toBe(card.id);
     expect(settlement.account_id).toBe(acc);
+
+    // Fatura importada depois da quitação: compras novas do ciclo já nascem pagas.
+    const invoiceCsv = 'date,title,amount\n2026-07-20,COMPRA CARTAO,300.00\n2026-07-22,COMPRA NOVA QUITADA,50.00\n';
+    const upload = (await api.post('/api/v1/imports').set(auth(token))
+      .field('source', 'csv').field('import_kind', 'credit_card_invoice')
+      .field('card_id', card.id).field('invoice_due_date', '2026-08-10')
+      .attach('file', Buffer.from(invoiceCsv, 'utf-8'), 'fatura-quitada.csv')).body.data;
+    const fresh = upload.items.find((i) => i.description === 'COMPRA NOVA QUITADA');
+    await api.put(`/api/v1/imports/${upload.batch.id}/items/${fresh.id}`).set(auth(token))
+      .send({ decision: 'create', suggested_category_id: categoryId });
+    await api.put(`/api/v1/imports/${upload.batch.id}/official-total`).set(auth(token)).send({ official_total_cents: 35000 });
+    expect((await api.post(`/api/v1/imports/${upload.batch.id}/confirm`).set(auth(token))).status).toBe(200);
+    const late = (await api.get('/api/v1/transactions?limit=500').set(auth(token)))
+      .body.data.find((t) => t.description === 'COMPRA NOVA QUITADA');
+    expect(late.status).toBe('paid');
+    expect(late.payment_date).toBe('2026-08-10');
+    expect(Number(late.amount)).toBe(50);
   });
 
   it('recusa quitação em crédito do extrato', async () => {

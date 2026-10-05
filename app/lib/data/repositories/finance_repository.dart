@@ -3892,6 +3892,7 @@ class FinanceRepository {
           subcategoryId: item.subcategoryId,
           dueDate: _budgetDueDate(month, item.dueDay),
           isBudget: true,
+          budgetItem: item,
         ),
       );
     }
@@ -4430,6 +4431,7 @@ class FinancialAgendaEntry {
     this.debt,
     this.debtInstallmentNumber,
     this.transaction,
+    this.budgetItem,
   });
 
   factory FinancialAgendaEntry.fromTransaction(LocalTransaction tx) {
@@ -4461,6 +4463,10 @@ class FinancialAgendaEntry {
   final LocalDebt? debt;
   final int? debtInstallmentNumber;
   final LocalTransaction? transaction;
+
+  /// Item de orçamento de origem (entradas `isBudget`), permitindo editar a
+  /// previsão — ex.: a conta ou o cartão — direto da agenda.
+  final LocalBudgetItem? budgetItem;
 }
 
 class DashboardSummary {

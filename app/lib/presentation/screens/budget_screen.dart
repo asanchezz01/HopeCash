@@ -668,11 +668,26 @@ void _showBudgetItemSheet(
       borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
     ),
     builder: (_) => _BudgetItemForm(
-      budget: budget,
+      budgetId: budget.id,
       item: item,
       initialCategoryId: initialCategoryId,
       initialType: initialType,
     ),
+  );
+}
+
+/// Abre a edição de um item de orçamento fora da tela de orçamento (ex.:
+/// agenda financeira do Dashboard), para ajustar valor, conta ou cartão.
+void showBudgetItemEditSheet(BuildContext context, LocalBudgetItem item) {
+  showModalBottomSheet<void>(
+    context: context,
+    isScrollControlled: true,
+    useSafeArea: true,
+    showDragHandle: true,
+    shape: const RoundedRectangleBorder(
+      borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+    ),
+    builder: (_) => _BudgetItemForm(budgetId: item.budgetId, item: item),
   );
 }
 
@@ -1489,13 +1504,13 @@ Color? _parseColor(String? value) {
 
 class _BudgetItemForm extends ConsumerStatefulWidget {
   const _BudgetItemForm({
-    required this.budget,
+    required this.budgetId,
     this.item,
     this.initialCategoryId,
     this.initialType,
   });
 
-  final LocalBudget budget;
+  final String budgetId;
   final LocalBudgetItem? item;
   final String? initialCategoryId;
   final String? initialType;
@@ -1564,7 +1579,7 @@ class _BudgetItemFormState extends ConsumerState<_BudgetItemForm> {
         : null;
     // A mesma categoria pode ter limites diferentes por conta/cartão.
     final items =
-        ref.read(budgetItemsProvider(widget.budget.id)).valueOrNull ?? [];
+        ref.read(budgetItemsProvider(widget.budgetId)).valueOrNull ?? [];
     final duplicate = items.any(
       (i) =>
           i.id != widget.item?.id &&
@@ -1589,7 +1604,7 @@ class _BudgetItemFormState extends ConsumerState<_BudgetItemForm> {
         .read(financeRepositoryProvider)
         .upsertBudgetItem(
           id: widget.item?.id,
-          budgetId: widget.budget.id,
+          budgetId: widget.budgetId,
           categoryId: _categoryId!,
           subcategoryId: _subcategoryId,
           plannedAmount: parseMoney(_amount.text)!,

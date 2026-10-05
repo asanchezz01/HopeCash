@@ -14,6 +14,7 @@ import '../components/hope_components.dart';
 import '../widgets/brand_logo.dart';
 import '../widgets/debt_payment_sheet.dart';
 import '../widgets/month_navigator.dart';
+import 'budget_screen.dart' show showBudgetItemEditSheet;
 import 'transactions_screen.dart' show showTransactionActions;
 
 final _dashboardValuesHiddenProvider = StateProvider<bool>((ref) => false);
@@ -2886,6 +2887,20 @@ void _showAgendaEntryDetailsSheet(
               onTap: () {
                 Navigator.pop(sheetContext);
                 _showRealizedTransactionsSheet(context, ref, entry);
+              },
+            ),
+          if (entry.budgetItem != null)
+            ListTile(
+              leading: const Icon(Icons.edit_outlined),
+              title: const Text('Editar previsão'),
+              subtitle: Text(
+                entry.type == 'expense'
+                    ? 'Conta ou cartão de saída, valor e vencimento'
+                    : 'Conta de entrada, valor e recebimento',
+              ),
+              onTap: () {
+                Navigator.pop(sheetContext);
+                showBudgetItemEditSheet(context, entry.budgetItem!);
               },
             ),
           if (entry.transaction != null)

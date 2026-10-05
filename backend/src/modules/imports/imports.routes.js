@@ -756,6 +756,14 @@ router.post('/:id/confirm', async (req, res) => {
         before,
       );
     }
+    // Ciclo já quitado (ex.: extrato com a liquidação conciliado antes da
+    // fatura): as compras novas nascem pagas, senão ficariam pendentes de baixa
+    // com a fatura já paga.
+    // ponytail: "todas pagas" como sinal de quitação; vincular liquidação ao ciclo se surgir falso positivo.
+    const priorCycle = locked.import_kind === 'credit_card_invoice' && locked.invoice_due_date
+      ? await cycleTransactions(req.auth, locked.card_id, locked.invoice_due_date, trx) : [];
+    const settledOn = priorCycle.length && priorCycle.every((tx) => tx.status === 'paid')
+      ? priorCycle.map((tx) => tx.payment_date ?? locked.invoice_due_date).sort().at(-1) : null;
     const matched = new Set();
     let created = 0; let edited = 0; let removed = 0; let futureInstallments = 0;
     for (const item of items) {
@@ -803,7 +811,10 @@ router.post('/:id/confirm', async (req, res) => {
           // extrato cria o lançamento já pago na conta, com amount preenchido.
           ...(isBank
             ? { account_id: locked.account_id, status: 'paid', payment_date: item.item_date, amount: Math.abs(effect) / 100 }
-            : { due_date: locked.invoice_due_date, status: 'planned', card_id: locked.card_id }),
+            : {
+              due_date: locked.invoice_due_date, card_id: locked.card_id,
+              ...(settledOn ? { status: 'paid', payment_date: settledOn, amount: Math.abs(effect) / 100 } : { status: 'planned' }),
+            }),
           installment_group_id: groupId,
           installment_number: isInstallment ? number : null,
           installment_total: isInstallment ? total : null,

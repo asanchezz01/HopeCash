@@ -121,7 +121,10 @@ class DashboardScreen extends ConsumerWidget {
           SizedBox(width: context.pagePadding - HopeSpacing.sm),
         ],
       ),
+      // Recálculos (ex.: após editar uma previsão) mantêm a tela atual até o
+      // novo resumo chegar, preservando rolagem e grupos abertos.
       body: summary.when(
+        skipLoadingOnReload: true,
         loading: () => const HopeSkeleton(rows: 5),
         error: (error, _) => HopeErrorState.load(
           error,
@@ -2263,7 +2266,11 @@ class _UpcomingPanel extends StatelessWidget {
             )
           : Column(
               children: [
-                for (final group in groups) _UpcomingGroupTile(group: group),
+                for (final group in groups)
+                  _UpcomingGroupTile(
+                    key: ValueKey(group.key),
+                    group: group,
+                  ),
               ],
             ),
     );
@@ -2271,7 +2278,7 @@ class _UpcomingPanel extends StatelessWidget {
 }
 
 class _UpcomingGroupTile extends StatefulWidget {
-  const _UpcomingGroupTile({required this.group});
+  const _UpcomingGroupTile({super.key, required this.group});
 
   final _UpcomingGroup group;
 

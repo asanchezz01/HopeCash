@@ -1,0 +1,42 @@
+name: OpenIPTV iPhone USB
+
+on:
+  push:
+    branches: [openiptv-usb]
+    paths:
+      - .github/workflows/openiptv-usb.yml
+      - .github/openiptv_usb_sign.py
+      - .github/openiptv-usb.ipa.enc
+
+permissions:
+  contents: read
+
+jobs:
+  sign:
+    runs-on: macos-latest
+    timeout-minutes: 15
+    environment: testflight
+    env:
+      APP_STORE_CONNECT_ISSUER_ID: ${{ secrets.APP_STORE_CONNECT_ISSUER_ID }}
+      APP_STORE_CONNECT_KEY_IDENTIFIER: ${{ secrets.APP_STORE_CONNECT_KEY_IDENTIFIER }}
+      APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
+      IOS_CERTIFICATE_PRIVATE_KEY: ${{ secrets.IOS_CERTIFICATE_PRIVATE_KEY }}
+      OPENIPTV_USB_DEVICE_UDID: ${{ secrets.OPENIPTV_USB_DEVICE_UDID }}
+      OPENIPTV_USB_IPA_PASSWORD: ${{ secrets.OPENIPTV_USB_IPA_PASSWORD }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Assinar para o iPhone registrado
+        run: |
+          umask 077
+          python3 -m venv "$RUNNER_TEMP/openiptv-signing"
+          export PATH="$RUNNER_TEMP/openiptv-signing/bin:$PATH"
+          python -m pip install --disable-pip-version-check codemagic-cli-tools
+          python .github/openiptv_usb_sign.py
+      - uses: actions/upload-artifact@v4
+        with:
+          name: OpenIPTV-iPhone-USB
+          path: ${{ runner.temp }}/OpenIPTV-iPhone-USB.ipa
+          if-no-files-found: error
+          retention-days: 1

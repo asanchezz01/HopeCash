@@ -5,12 +5,11 @@ import os
 import plistlib
 import secrets
 import subprocess
-from datetime import datetime, timezone
 from pathlib import Path
 
 from cryptography import x509
 from cryptography.hazmat.primitives.hashes import SHA1
-from cryptography.hazmat.primitives.serialization import PrivateFormat, load_pem_private_key, pkcs12
+from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, load_pem_private_key, pkcs12
 
 BUNDLE_ID = "tech.hopecash.openiptv"
 IPA_HASH = "fa968ba0592c8c9f7b9e707e8302129d77860ca24bf7d087d714da8b5fb17d34"
@@ -48,29 +47,21 @@ run("ditto", "-x", "-k", str(unsigned), str(work))
 app = work / "Payload/App.app"
 assert plistlib.loads((app / "Info.plist").read_bytes())["CFBundleIdentifier"] == BUNDLE_ID
 
-devices = apple("devices", "list", "--platform", "IOS")
-device = next((item for item in devices if normalize_udid(attribute(item, "udid")) == normalize_udid(udid)), None)
-if device is None:
-    registered = apple("devices", "register", "--name", "iPhone OpenIPTV", "--udid", "@env:OPENIPTV_USB_DEVICE_UDID")
-    device = registered[0] if isinstance(registered, list) else registered
-assert attribute(device, "status") == "ENABLED", "Dispositivo desabilitado na equipe Apple Developer"
-print("Dispositivo registrado e habilitado", flush=True)
-
-bundles = apple("bundle-ids", "list", "--bundle-id-identifier", BUNDLE_ID, "--strict-match-identifier")
-bundle = bundles[0] if bundles else apple("bundle-ids", "create", BUNDLE_ID, "--name", "OpenIPTV")
+profile = apple("profiles", "get", "U3JL7LX53X")
+embedded = app / "embedded.mobileprovision"
+embedded.write_bytes(base64.b64decode(attribute(profile, "profileContent")))
+settings = plistlib.loads(run("security", "cms", "-D", "-i", str(embedded), stdout=subprocess.PIPE).stdout)
+assert {normalize_udid(d) for d in settings["ProvisionedDevices"]} == {normalize_udid(udid)}, "Perfil tem outro dispositivo"
 
 key = load_pem_private_key(os.environ["IOS_CERTIFICATE_PRIVATE_KEY"].encode(), password=None)
-certificates = apple("certificates", "list", "--type", "DISTRIBUTION", "--type", "IOS_DISTRIBUTION")
-for resource in certificates:
-    candidate = x509.load_der_x509_certificate(base64.b64decode(attribute(resource, "certificateContent")))
-    if candidate.public_key() == key.public_key() and candidate.not_valid_after_utc > datetime.now(timezone.utc):
+public_key = key.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo)
+for cert_der in settings["DeveloperCertificates"]:
+    candidate = x509.load_der_x509_certificate(cert_der)
+    if candidate.public_key().public_bytes(Encoding.DER, PublicFormat.SubjectPublicKeyInfo) == public_key:
         break
 else:
-    resource = apple("certificates", "create", "--type", "DISTRIBUTION",
-                     "--certificate-key", "@env:IOS_CERTIFICATE_PRIVATE_KEY")
-    candidate = x509.load_der_x509_certificate(base64.b64decode(attribute(resource, "certificateContent")))
-cert_id = resource["id"]
-cert_der = base64.b64decode(attribute(resource, "certificateContent"))
+    raise RuntimeError("O certificado do perfil não corresponde à chave existente da equipe")
+
 identity = hashlib.sha1(cert_der).hexdigest().upper()
 p12 = work / "signing.p12"
 p12_password = secrets.token_hex(24)
@@ -83,18 +74,6 @@ p12_encryption = (
     .build(p12_password.encode())
 )
 p12.write_bytes(pkcs12.serialize_key_and_certificates(b"OpenIPTV", key, candidate, None, p12_encryption))
-
-profile_name = f"OpenIPTV USB {hashlib.sha256((device['id'] + cert_id).encode()).hexdigest()[:10]}"
-profiles = apple("profiles", "list", "--type", "IOS_APP_ADHOC", "--state", "ACTIVE", "--name", profile_name)
-profile = profiles[0] if profiles else apple("profiles", "create", bundle["id"], "--type", "IOS_APP_ADHOC", "--name",
-                                            profile_name, "--certificate-ids", cert_id, "--device-ids", device["id"])
-if not attribute(profile, "profileContent"):
-    profile = apple("profiles", "get", profile["id"])
-embedded = app / "embedded.mobileprovision"
-embedded.write_bytes(base64.b64decode(attribute(profile, "profileContent")))
-settings = plistlib.loads(run("security", "cms", "-D", "-i", str(embedded), stdout=subprocess.PIPE).stdout)
-assert {normalize_udid(d) for d in settings["ProvisionedDevices"]} == {normalize_udid(udid)}, "Perfil tem outro dispositivo"
-assert cert_der in settings["DeveloperCertificates"], "Certificado diferente do provisionamento"
 profile_entitlements = settings["Entitlements"]
 assert profile_entitlements["application-identifier"].split(".", 1)[1] == BUNDLE_ID
 entitlements = work / "entitlements.plist"

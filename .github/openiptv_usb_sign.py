@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.hashes import SHA1
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, load_pem_private_key, pkcs12
 
 BUNDLE_ID = "tech.hopecash.openiptv"
-IPA_HASH = "fa968ba0592c8c9f7b9e707e8302129d77860ca24bf7d087d714da8b5fb17d34"
+IPA_HASH = "f2d36f06720ea5c8e724a0bb29189fa5fe46f1c29eaca9a1b818b4ae64cf06ae"
 
 temp = Path(os.environ["RUNNER_TEMP"])
 work = temp / "openiptv-usb"

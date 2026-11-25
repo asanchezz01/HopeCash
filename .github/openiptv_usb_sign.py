@@ -12,7 +12,7 @@ from cryptography.hazmat.primitives.hashes import SHA1
 from cryptography.hazmat.primitives.serialization import Encoding, PrivateFormat, PublicFormat, load_pem_private_key, pkcs12
 
 BUNDLE_ID = "tech.hopecash.openiptv"
-IPA_HASH = "f2d36f06720ea5c8e724a0bb29189fa5fe46f1c29eaca9a1b818b4ae64cf06ae"
+IPA_HASH = "272b91b39391c9768411c1b0ad9b82f4223c5e4c5a9a2cb0bb063e1af0379f98"
 
 temp = Path(os.environ["RUNNER_TEMP"])
 work = temp / "openiptv-usb"
@@ -40,12 +40,14 @@ def normalize_udid(value):
 
 
 unsigned = work / "unsigned.ipa"
-run("openssl", "enc", "-d", "-aes-256-cbc", "-pbkdf2", "-iter", "200000", "-in",
-    ".github/openiptv-usb.ipa.enc", "-out", str(unsigned), "-pass", "env:OPENIPTV_USB_IPA_PASSWORD")
+run("curl", "--fail", "--silent", "--show-error", "--retry", "2", "--max-time", "30",
+    "--output", str(unsigned), "https://iptv.hopecash.tech/openiptv-ios.ipa")
 assert hashlib.sha256(unsigned.read_bytes()).hexdigest() == IPA_HASH, "IPA original não confere"
 run("ditto", "-x", "-k", str(unsigned), str(work))
 app = work / "Payload/App.app"
-assert plistlib.loads((app / "Info.plist").read_bytes())["CFBundleIdentifier"] == BUNDLE_ID
+info = plistlib.loads((app / "Info.plist").read_bytes())
+assert info["CFBundleIdentifier"] == BUNDLE_ID
+assert info["NSAppTransportSecurity"] == {"NSAllowsArbitraryLoads": True}
 
 profile = apple("profiles", "get", "U3JL7LX53X")
 embedded = app / "embedded.mobileprovision"

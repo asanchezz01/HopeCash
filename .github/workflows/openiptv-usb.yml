@@ -6,7 +6,6 @@ on:
     paths:
       - .github/workflows/openiptv-usb.yml
       - .github/openiptv_usb_sign.py
-      - .github/openiptv-usb.ipa.enc
 
 permissions:
   contents: read
@@ -22,7 +21,6 @@ jobs:
       APP_STORE_CONNECT_PRIVATE_KEY: ${{ secrets.APP_STORE_CONNECT_PRIVATE_KEY }}
       IOS_CERTIFICATE_PRIVATE_KEY: ${{ secrets.IOS_CERTIFICATE_PRIVATE_KEY }}
       OPENIPTV_USB_DEVICE_UDID: ${{ secrets.OPENIPTV_USB_DEVICE_UDID }}
-      OPENIPTV_USB_IPA_PASSWORD: ${{ secrets.OPENIPTV_USB_IPA_PASSWORD }}
     steps:
       - uses: actions/checkout@v4
         with:
